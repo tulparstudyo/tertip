@@ -1,0 +1,47 @@
+---
+description: Express modular MVC conventions for Tertip backend
+globs: backend/**
+alwaysApply: false
+---
+
+# Backend — Modular MVC
+
+## Folder layout
+
+```
+backend/src/modules/{user|admin}/{module}/
+  {module}.routes.js
+  {module}.controller.js
+  {module}.model.js
+  {module}.view.js
+```
+
+## Naming
+
+| Layer | File | Export |
+|-------|------|--------|
+| Routes | `library.routes.js` | `default` Router |
+| Controller | `library.controller.js` | `libraryController` |
+| Model | `library.model.js` | `libraryModel` |
+| View | `library.view.js` | `libraryView` |
+
+- Controller methods: `listSources`, `createSource`, `getSourceById`
+- Model methods: `findAllByUserId`, `insert`, `deleteById`
+- View methods: `formatSource`, `formatSourceList`
+- API prefix: `/api/v1/{user|admin}/{module}/...`
+- Route params: `:sourceId`, `:projectId` (camelCase + Id)
+
+## Response shape
+
+```json
+{ "success": true, "message": "...", "data": {} }
+```
+
+Use `sendSuccess` / `sendError` from `shared/utils/api-response.util.js`.
+Use `asyncHandler` for async controllers. Use `req.t('user.library.create.success')` for messages.
+
+## Rules
+
+- User and admin modules never share controllers or models.
+- Views convert DB `snake_case` → API `camelCase`; never expose secrets.
+- Shared code only in `shared/middleware/` and `shared/utils/`.

@@ -1,0 +1,38 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply text-slate-800;
+  }
+}
+
+@layer components {
+  .a4-page {
+    width: 210mm;
+    min-height: 297mm;
+  }
+
+  .a4-page-content {
+    @apply px-[25mm] py-[20mm];
+  }
+
+  .ProseMirror {
+    @apply outline-none min-h-[257mm] text-[12pt] leading-relaxed;
+    font-family: 'Times New Roman', Times, serif;
+  }
+
+  .ProseMirror p {
+    @apply mb-3;
+  }
+
+  .ProseMirror h1,
+  .ProseMirror h2,
+  .ProseMirror h3,
+  .ProseMirror h4,
+  .ProseMirror h5,
+  .ProseMirror h6 {
+    @apply text-[14pt] font-bold mb-3;
+  }
+}

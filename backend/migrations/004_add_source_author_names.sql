@@ -1,0 +1,2 @@
+ALTER TABLE sources ADD COLUMN IF NOT EXISTS author_first_name VARCHAR(255);
+ALTER TABLE sources ADD COLUMN IF NOT EXISTS author_last_name VARCHAR(255);

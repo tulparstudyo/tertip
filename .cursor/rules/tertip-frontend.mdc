@@ -1,0 +1,14 @@
+---
+description: Vue 3 + Tailwind frontend conventions for Tertip
+globs: frontend/**
+alwaysApply: false
+---
+
+# Frontend Rules
+
+- **Stack:** Vue 3, Tailwind CSS, vue-i18n (`tr` default), Tiptap editor.
+- **Locale:** No hardcoded strings — all copy via `vue-i18n` keys (`tr` first, `en` ready).
+- **Editor:** A4 layout (`210mm` × `297mm` min-height), 3s debounce before Google Docs push.
+- **Citations:** Custom Tiptap atom `AcademicFootnote` with `{ sourceId, pageNumber, citationType, formattedText }`.
+- **Collaboration:** Read-only shared projects (`editable: false`); matrix comments by line + column.
+- **API calls:** Send `Accept-Language` header matching active locale.

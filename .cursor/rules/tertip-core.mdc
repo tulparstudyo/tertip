@@ -1,0 +1,23 @@
+---
+description: Tertip core vision, stack, and locked architectural decisions
+alwaysApply: true
+---
+
+# Tertip — Core Rules
+
+- **Product:** Academic library + writing + matrix peer-review SaaS for researchers.
+- **Repo root:** `public_html/` (GitHub-connected). Semi-monorepo: `backend/` + `frontend/`.
+- **Backend:** Express.js, modular MVC, stateless, Google Cloud Run deployment.
+- **Frontend:** Vue 3 + Tailwind + Tiptap (Step 6).
+- **Database:** PostgreSQL (Cloud SQL). User files live in user's Google Drive only.
+- **i18n:** Turkish (`tr`) first. No hardcoded UI/API strings — use `req.t()` and `vue-i18n`.
+- **Auth:** `users` and `admins` are fully isolated (separate tables, routes, JWT secrets).
+- **Google Docs sync:** One-way only (Tertip → Google Docs). Tertip is source of truth.
+
+## Build priority
+
+1. Backend base + DB pool + Dockerfile
+2. User/Admin auth + device_id sessions
+3. Google OAuth + Library on Drive
+4. Editor A4 canvas + basic Tiptap
+5. AI features + native footnotes (after core is stable)

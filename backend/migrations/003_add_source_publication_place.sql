@@ -1,0 +1,1 @@
+ALTER TABLE sources ADD COLUMN IF NOT EXISTS publication_place VARCHAR(255);

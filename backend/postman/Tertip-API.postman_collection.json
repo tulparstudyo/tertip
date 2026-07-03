@@ -1,0 +1,640 @@
+{
+  "info": {
+    "_postman_id": "tertip-api-v1",
+    "name": "Tertip API",
+    "description": "Tertip backend REST API collection.\n\nBase URL: {{baseUrl}}\n\nAfter Register or Login, `userAccessToken` and `refreshToken` are saved automatically.\nAfter Admin Login, `adminAccessToken` is saved automatically.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080/api/v1" },
+    { "key": "deviceId", "value": "postman-device-001" },
+    { "key": "userAccessToken", "value": "" },
+    { "key": "refreshToken", "value": "" },
+    { "key": "adminAccessToken", "value": "" },
+    { "key": "sourceId", "value": "1" },
+    { "key": "gatewayToken", "value": "" },
+    { "key": "googleOAuthUrl", "value": "" },
+    { "key": "projectId", "value": "1" }
+  ],
+  "auth": {
+    "type": "noauth"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.request.headers.upsert({ key: 'Accept-Language', value: 'tr' });"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["health"]
+            },
+            "description": "Veritabanı bağlantısını da test eder."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "User — Auth",
+      "item": [
+        {
+          "name": "Register",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const json = pm.response.json();",
+                  "    if (json.data?.accessToken) pm.collectionVariables.set('userAccessToken', json.data.accessToken);",
+                  "    if (json.data?.refreshToken) pm.collectionVariables.set('refreshToken', json.data.refreshToken);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Test User\",\n  \"email\": \"test@tertip.com\",\n  \"password\": \"testpass123\",\n  \"deviceId\": \"{{deviceId}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/user/auth/register",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "auth", "register"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const json = pm.response.json();",
+                  "    if (json.data?.accessToken) pm.collectionVariables.set('userAccessToken', json.data.accessToken);",
+                  "    if (json.data?.refreshToken) pm.collectionVariables.set('refreshToken', json.data.refreshToken);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"test@tertip.com\",\n  \"password\": \"testpass123\",\n  \"deviceId\": \"{{deviceId}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/user/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "auth", "login"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Refresh Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const json = pm.response.json();",
+                  "    if (json.data?.accessToken) pm.collectionVariables.set('userAccessToken', json.data.accessToken);",
+                  "    if (json.data?.refreshToken) pm.collectionVariables.set('refreshToken', json.data.refreshToken);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\",\n  \"deviceId\": \"{{deviceId}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/user/auth/refresh",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "auth", "refresh"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/user/auth/logout",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "auth", "logout"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Me",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{userAccessToken}}", "type": "string" }]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/user/auth/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "auth", "me"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "User — Projects",
+      "item": [
+        {
+          "name": "List Projects",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{userAccessToken}}", "type": "string" }]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/user/projects",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "projects"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Project",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const json = pm.response.json();",
+                  "    if (json.data?.id) pm.collectionVariables.set('projectId', String(json.data.id));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{userAccessToken}}", "type": "string" }]
+            },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Akademik Yazım Tezi\",\n  \"projectType\": \"thesis\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/user/projects",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "projects"]
+            },
+            "description": "Google Drive bağlantısı gerekir. Tertip/Projects/ altında klasör + Google Docs oluşturur."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Project by ID",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{userAccessToken}}", "type": "string" }]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/user/projects/{{projectId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "projects", "{{projectId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Project",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{userAccessToken}}", "type": "string" }]
+            },
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Güncellenmiş Proje Başlığı\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/user/projects/{{projectId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "projects", "{{projectId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Project",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{userAccessToken}}", "type": "string" }]
+            },
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/user/projects/{{projectId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "projects", "{{projectId}}"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "User — Library",
+      "item": [
+        {
+          "name": "List Sources",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{userAccessToken}}", "type": "string" }]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/user/library/sources",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "library", "sources"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Source",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const json = pm.response.json();",
+                  "    if (json.data?.id) pm.collectionVariables.set('sourceId', String(json.data.id));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{userAccessToken}}", "type": "string" }]
+            },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sourceType\": \"book\",\n  \"title\": \"Akademik Yazım\",\n  \"authors\": \"Yılmaz, A.\",\n  \"publisher\": \"Tertip Yayınları\",\n  \"publicationYear\": 2026,\n  \"volume\": \"1\",\n  \"issue\": null,\n  \"pages\": \"320\",\n  \"googleDriveFileId\": null\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/user/library/sources",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "library", "sources"]
+            },
+            "description": "sourceType: book | article | newspaper | encyclopedia | thesis | other"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Source by ID",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{userAccessToken}}", "type": "string" }]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/user/library/sources/{{sourceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "library", "sources", "{{sourceId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Source",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{userAccessToken}}", "type": "string" }]
+            },
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Akademik Yazım (2. Baskı)\",\n  \"publicationYear\": 2027\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/user/library/sources/{{sourceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "library", "sources", "{{sourceId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Source",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{userAccessToken}}", "type": "string" }]
+            },
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/user/library/sources/{{sourceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "library", "sources", "{{sourceId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Upload File to Drive",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{userAccessToken}}", "type": "string" }]
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "file", "type": "file", "src": "" }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/user/library/sources/{{sourceId}}/upload",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "library", "sources", "{{sourceId}}", "upload"]
+            },
+            "description": "PDF veya video dosyası. Google Drive bağlantısı gerekir."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Stream Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const json = pm.response.json();",
+                  "    if (json.data?.gatewayToken) pm.collectionVariables.set('gatewayToken', json.data.gatewayToken);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{userAccessToken}}", "type": "string" }]
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/user/library/sources/{{sourceId}}/stream-token",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "library", "sources", "{{sourceId}}", "stream-token"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Stream File (Gateway)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/user/library/stream/{{gatewayToken}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "library", "stream", "{{gatewayToken}}"]
+            },
+            "description": "60 saniyelik gateway token ile dosya stream. Auth header gerekmez."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "User — Google",
+      "item": [
+        {
+          "name": "Connect URL",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const json = pm.response.json();",
+                  "    if (json.data?.url) pm.collectionVariables.set('googleOAuthUrl', json.data.url);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{userAccessToken}}", "type": "string" }]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/user/google/connect-url",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "google", "connect-url"]
+            },
+            "description": "OAuth URL'sini JSON olarak döner. Yanıttaki data.url değerini tarayıcıda açın. URL otomatik olarak {{googleOAuthUrl}} değişkenine kaydedilir."
+          },
+          "response": []
+        },
+        {
+          "name": "Connect (Browser Redirect)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{userAccessToken}}", "type": "string" }]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/user/google/connect",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "google", "connect"]
+            },
+            "description": "Tarayıcıda açın. Google OAuth onayı sonrası callback çalışır."
+          },
+          "response": []
+        },
+        {
+          "name": "Status",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{userAccessToken}}", "type": "string" }]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/user/google/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "google", "status"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Disconnect",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{userAccessToken}}", "type": "string" }]
+            },
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/user/google/disconnect",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "google", "disconnect"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Admin — Auth",
+      "item": [
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const json = pm.response.json();",
+                  "    if (json.data?.accessToken) pm.collectionVariables.set('adminAccessToken', json.data.accessToken);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@tertip.com\",\n  \"password\": \"adminpass123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "auth", "login"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Me",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{adminAccessToken}}", "type": "string" }]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/auth/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "auth", "me"]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
