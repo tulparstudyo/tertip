@@ -71,6 +71,10 @@ function onCommentAdded() {
   editorRef.value?.syncCommentMarkersFromApi?.();
 }
 
+function onCommentsUpdated() {
+  commentSidebarRef.value?.loadComments({ silent: true });
+}
+
 function onVisibleLinesChange(range) {
   visibleLineRange.value = range;
 }
@@ -104,7 +108,7 @@ function onVisibleLinesChange(range) {
         :initial-content="documentContent"
         :can-edit="canEdit"
         @comment-added="onCommentAdded"
-        @comments-updated="onCommentAdded"
+        @comments-updated="onCommentsUpdated"
         @visible-lines-change="onVisibleLinesChange"
       />
     </div>

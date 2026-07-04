@@ -356,13 +356,13 @@ async function saveContent(json, { silent = true } = {}) {
     const res = await api(`/user/projects/${props.projectId}/sections/${props.section}`, {
       method: 'PUT',
       body: { content: json },
-      silent,
+      silent: true,
     });
     saveCycleActive = false;
 
     const positionsChanged = await syncCommentPositionsFromEditor();
 
-    if (silent) {
+    if (!silent) {
       toast.success(res.message ?? t('editor.syncSaved'));
     }
 
@@ -373,9 +373,7 @@ async function saveContent(json, { silent = true } = {}) {
     return res;
   } catch {
     saveCycleActive = false;
-    if (silent) {
-      toast.error(t('editor.saveError'));
-    }
+    toast.error(t('editor.saveError'));
     return null;
   }
 }
@@ -1117,6 +1115,40 @@ function collectCommentPositionsFromEditor(ed) {
   return items;
 }
 
+function syncCommentPositionAttrsInEditor(ed) {
+  if (!ed) return false;
+
+  const tr = ed.state.tr;
+  let changed = false;
+
+  ed.state.doc.descendants((node, pos) => {
+    if (node.type.name !== 'editorComment' || node.attrs.commentId == null) return;
+
+    const { lineNumber, columnOffset } = getEditorLineColumn(ed.state.doc, pos);
+    if (
+      node.attrs.lineNumber === lineNumber
+      && node.attrs.columnOffset === columnOffset
+    ) {
+      return;
+    }
+
+    tr.setNodeMarkup(pos, undefined, {
+      ...node.attrs,
+      lineNumber,
+      columnOffset,
+    });
+    changed = true;
+  });
+
+  if (changed) {
+    skipSave = true;
+    ed.view.dispatch(tr);
+    skipSave = false;
+  }
+
+  return changed;
+}
+
 async function syncCommentPositionsFromEditor() {
   if (!editor.value || !props.projectId) return false;
 
@@ -1126,6 +1158,8 @@ async function syncCommentPositionsFromEditor() {
   const positionsChanged = items.some(
     (item) => item.lineNumber !== item.storedLine || item.columnOffset !== item.storedCol,
   );
+
+  if (!positionsChanged) return false;
 
   try {
     await api(`/user/projects/${props.projectId}/comments/sync-positions`, {
@@ -1140,7 +1174,8 @@ async function syncCommentPositionsFromEditor() {
       },
       silent: true,
     });
-    return positionsChanged;
+    syncCommentPositionAttrsInEditor(editor.value);
+    return true;
   } catch {
     return false;
   }

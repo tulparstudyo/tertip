@@ -36,6 +36,45 @@ export function resetEmailTransporter() {
   transporterKey = null;
 }
 
+function createTransporterFromConfig(smtp) {
+  return nodemailer.createTransport({
+    host: smtp.host,
+    port: smtp.port,
+    secure: smtp.secure,
+    auth: smtp.user
+      ? { user: smtp.user, pass: smtp.pass }
+      : undefined,
+  });
+}
+
+export async function sendTestEmail({ to, smtp, locale = 'tr' }) {
+  if (!smtp?.host) {
+    const err = new Error('SMTP host missing');
+    err.code = 'SMTP_HOST_MISSING';
+    throw err;
+  }
+
+  const transport = createTransporterFromConfig(smtp);
+  await transport.verify();
+
+  const isTr = locale === 'tr';
+  const subject = isTr ? 'Tertip — SMTP test e-postası' : 'Tertip — SMTP test email';
+  const text = isTr
+    ? 'Bu e-posta Tertip yönetim panelindeki SMTP ayarlarını test etmek için gönderilmiştir.'
+    : 'This email was sent to test SMTP settings in the Tertip admin panel.';
+  const html = isTr
+    ? '<p>Bu e-posta Tertip yönetim panelindeki SMTP ayarlarını test etmek için gönderilmiştir.</p>'
+    : '<p>This email was sent to test SMTP settings in the Tertip admin panel.</p>';
+
+  await transport.sendMail({
+    from: smtp.from || smtp.user,
+    to,
+    subject,
+    text,
+    html,
+  });
+}
+
 export async function sendPasswordResetEmail({ to, resetUrl, locale = 'tr' }) {
   const smtp = getSmtpConfig();
   const expiresHours = getPasswordResetExpiresHours();

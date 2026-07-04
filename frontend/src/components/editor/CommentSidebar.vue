@@ -36,11 +36,11 @@ const visibleComments = computed(() =>
     ),
 );
 
-async function loadComments() {
-  loading.value = true;
+async function loadComments({ silent = false } = {}) {
+  if (!silent) loading.value = true;
   try {
     const query = props.section ? `?section=${encodeURIComponent(props.section)}` : '';
-    const res = await api(`/user/projects/${props.projectId}/comments${query}`);
+    const res = await api(`/user/projects/${props.projectId}/comments${query}`, { silent: true });
     comments.value = res.data ?? [];
   } finally {
     loading.value = false;

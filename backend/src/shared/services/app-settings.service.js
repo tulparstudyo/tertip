@@ -82,3 +82,26 @@ export function getPasswordResetExpiresHours() {
   const value = Number(getSetting('PASSWORD_RESET_EXPIRES_HOURS'));
   return Number.isFinite(value) && value > 0 ? value : 1;
 }
+
+const SMTP_SETTING_CODES = ['SMTP_HOST', 'SMTP_PORT', 'SMTP_SECURE', 'SMTP_USER', 'SMTP_PASS', 'SMTP_FROM'];
+
+export function buildSmtpConfigFromSettingsList(settings) {
+  if (!Array.isArray(settings) || !settings.length) return null;
+
+  const map = Object.fromEntries(
+    settings
+      .filter((item) => SMTP_SETTING_CODES.includes(item?.settingCode))
+      .map((item) => [item.settingCode, item.settingValue ?? '']),
+  );
+
+  if (!Object.keys(map).length) return null;
+
+  return {
+    host: String(map.SMTP_HOST ?? '').trim() || null,
+    port: Number(map.SMTP_PORT) || 587,
+    secure: String(map.SMTP_SECURE ?? '').trim().toLowerCase() === 'true',
+    user: String(map.SMTP_USER ?? '').trim() || null,
+    pass: String(map.SMTP_PASS ?? '').trim() || null,
+    from: String(map.SMTP_FROM ?? '').trim() || null,
+  };
+}

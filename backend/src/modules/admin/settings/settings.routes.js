@@ -10,6 +10,7 @@ router.use(adminAuthMiddleware);
 
 router.get('/', systemSettingsController.list);
 router.put('/', systemSettingsController.update);
+router.post('/test-email', systemSettingsController.testEmail);
 router.get('/standard-abbreviations', standardAbbreviationsController.getForAdmin);
 router.put('/standard-abbreviations', standardAbbreviationsController.updateForAdmin);
 

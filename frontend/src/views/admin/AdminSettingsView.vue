@@ -2,12 +2,18 @@
 import { ref, computed, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { adminApi } from '@/api/admin-client';
+import { useAdminAuth } from '@/composables/useAdminAuth';
 
 const { t } = useI18n();
+const { admin } = useAdminAuth();
 
 const loading = ref(true);
 const saving = ref(false);
 const items = ref([]);
+const testEmailTo = ref('');
+const testEmailLoading = ref(false);
+
+const SMTP_SETTING_CODES = ['SMTP_HOST', 'SMTP_PORT', 'SMTP_SECURE', 'SMTP_USER', 'SMTP_PASS', 'SMTP_FROM'];
 
 const groupOrder = ['contact', 'payment', 'smtp', 'security'];
 
@@ -58,7 +64,37 @@ async function handleSave() {
   }
 }
 
-onMounted(loadSettings);
+function getSmtpSettingsPayload() {
+  return items.value
+    .filter((item) => SMTP_SETTING_CODES.includes(item.settingCode))
+    .map(({ settingCode, settingValue }) => ({ settingCode, settingValue }));
+}
+
+async function sendTestEmail() {
+  const to = testEmailTo.value.trim();
+  if (!to) return;
+
+  testEmailLoading.value = true;
+  try {
+    await adminApi('/settings/test-email', {
+      method: 'POST',
+      body: {
+        to,
+        settings: getSmtpSettingsPayload(),
+      },
+      notify: true,
+    });
+  } catch {
+    // Error toast is already shown by adminApi().
+  } finally {
+    testEmailLoading.value = false;
+  }
+}
+
+onMounted(async () => {
+  testEmailTo.value = admin.value?.email ?? '';
+  await loadSettings();
+});
 </script>
 
 <template>
@@ -123,6 +159,36 @@ onMounted(loadSettings);
             rows="3"
             class="w-full border rounded-lg px-3 py-2 text-sm font-mono"
           />
+        </div>
+
+        <div
+          v-if="group.key === 'smtp'"
+          class="mt-2 pt-4 border-t border-slate-100 space-y-3"
+        >
+          <h4 class="text-sm font-medium text-slate-700">
+            {{ t('admin.settings.testEmail.title') }}
+          </h4>
+          <p class="text-xs text-slate-500">
+            {{ t('admin.settings.testEmail.hint') }}
+          </p>
+          <div class="flex flex-col sm:flex-row gap-2">
+            <input
+              id="smtp-test-email"
+              v-model="testEmailTo"
+              type="email"
+              autocomplete="email"
+              class="flex-1 border rounded-lg px-3 py-2 text-sm"
+              :placeholder="t('admin.settings.testEmail.toPlaceholder')"
+            />
+            <button
+              type="button"
+              class="px-4 py-2 bg-slate-800 text-white rounded-lg text-sm font-medium hover:bg-slate-900 disabled:opacity-50 whitespace-nowrap"
+              :disabled="testEmailLoading || !testEmailTo.trim()"
+              @click="sendTestEmail"
+            >
+              {{ testEmailLoading ? t('common.loading') : t('admin.settings.testEmail.send') }}
+            </button>
+          </div>
         </div>
       </section>
 

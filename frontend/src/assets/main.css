@@ -80,6 +80,20 @@
     font-family: 'Times New Roman', Times, serif;
   }
 
+  .ProseMirror p,
+  .ProseMirror h1,
+  .ProseMirror h2,
+  .ProseMirror h3,
+  .ProseMirror h4,
+  .ProseMirror h5,
+  .ProseMirror h6,
+  .ProseMirror li,
+  .ProseMirror blockquote,
+  .ProseMirror td,
+  .ProseMirror th {
+    font-family: 'Times New Roman', Times, serif;
+  }
+
   .ProseMirror p {
     @apply mb-3;
   }

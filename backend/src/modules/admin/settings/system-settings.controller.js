@@ -1,9 +1,17 @@
 import { asyncHandler } from '../../../shared/utils/async-handler.util.js';
 import { sendSuccess, sendError } from '../../../shared/utils/api-response.util.js';
 import { settingsModel } from '../../../shared/models/settings.model.js';
-import { refreshAppSettings } from '../../../shared/services/app-settings.service.js';
-import { resetEmailTransporter } from '../../../shared/services/email.service.js';
+import {
+  refreshAppSettings,
+  getSmtpConfig,
+  buildSmtpConfigFromSettingsList,
+} from '../../../shared/services/app-settings.service.js';
+import { resetEmailTransporter, sendTestEmail } from '../../../shared/services/email.service.js';
 import { systemSettingsView } from './system-settings.view.js';
+
+function isValidEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value ?? '').trim());
+}
 
 export const systemSettingsController = {
   list: asyncHandler(async (req, res) => {
@@ -35,5 +43,41 @@ export const systemSettingsController = {
       message: req.t('admin.settings.update.success'),
       data: systemSettingsView.formatList(items.length ? items : updated),
     });
+  }),
+
+  testEmail: asyncHandler(async (req, res) => {
+    const to = String(req.body?.to ?? '').trim();
+
+    if (!isValidEmail(to)) {
+      return sendError(res, {
+        status: 400,
+        message: req.t('admin.settings.testEmail.invalidEmail'),
+      });
+    }
+
+    const smtp =
+      buildSmtpConfigFromSettingsList(req.body?.settings) ?? getSmtpConfig();
+
+    if (!smtp.host) {
+      return sendError(res, {
+        status: 400,
+        message: req.t('admin.settings.testEmail.missingHost'),
+      });
+    }
+
+    try {
+      await sendTestEmail({ to, smtp, locale: req.locale ?? 'tr' });
+      sendSuccess(res, {
+        message: req.t('admin.settings.testEmail.success'),
+        data: { to },
+      });
+    } catch (err) {
+      console.error('SMTP test email failed:', err);
+      return sendError(res, {
+        status: 502,
+        message: req.t('admin.settings.testEmail.failed'),
+        errors: err?.message ? [{ message: err.message }] : undefined,
+      });
+    }
   }),
 };
