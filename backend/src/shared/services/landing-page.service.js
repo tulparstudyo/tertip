@@ -1,4 +1,35 @@
+import { env } from '../../config/env.js';
+
 export const LANDING_PAGE_KEY = 'landing_page';
+
+const ENV_PLACEHOLDER_RESOLVERS = {
+  '[PAYMENT_AMOUNT]': () => (env.paymentAmount != null ? String(env.paymentAmount) : ''),
+  '[PAYMENT_CURRENCY]': () => env.paymentCurrency ?? 'TRY',
+};
+
+export function resolveLandingEnvPlaceholders(value) {
+  if (value === null || value === undefined) return value;
+  if (typeof value === 'string') {
+    let result = value;
+    for (const [token, resolve] of Object.entries(ENV_PLACEHOLDER_RESOLVERS)) {
+      result = result.split(token).join(resolve());
+    }
+    return result;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => resolveLandingEnvPlaceholders(item));
+  }
+  if (typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, resolveLandingEnvPlaceholders(item)]),
+    );
+  }
+  return value;
+}
+
+export function getLandingEnvPlaceholderKeys() {
+  return Object.keys(ENV_PLACEHOLDER_RESOLVERS);
+}
 
 export function getDefaultLandingContent() {
   return {
@@ -135,10 +166,10 @@ export function getDefaultLandingContent() {
       },
       {
         name: 'Pro',
-        price: '₺299',
+        price: '₺[PAYMENT_AMOUNT]',
         period: '/ay',
         description: 'Genişletilmiş AI kotası ve öncelikli destek.',
-        features: ['Sınırsız proje', '5M AI token', 'Öncelikli destek'],
+        features: ['Sınırsız proje', 'Aylık AI komut kotası', 'Öncelikli destek'],
         ctaText: 'Satın Al',
         ctaLink: '/register',
         highlighted: true,

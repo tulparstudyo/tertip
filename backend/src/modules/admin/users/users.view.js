@@ -5,8 +5,9 @@ export const usersView = {
       name: row.name,
       email: row.email,
       isActive: row.is_active,
-      aiTokenQuota: row.ai_token_quota,
-      aiTokenUsed: row.ai_token_used,
+      aiCommandQuota: row.ai_command_quota,
+      aiCommandsUsed: row.ai_commands_used,
+      aiQuotaPeriodStart: row.ai_quota_period_start,
       projectCount: row.project_count ?? undefined,
       createdAt: row.created_at,
     };

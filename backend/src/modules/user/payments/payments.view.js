@@ -11,6 +11,8 @@ export const paymentsView = {
       notes: row.notes,
       status: row.status,
       adminNotes: row.admin_notes,
+      invoiceNumber: row.invoice_number,
+      hasInvoice: Boolean(row.invoice_pdf_url),
       reviewedAt: row.reviewed_at,
       createdAt: row.created_at,
     };

@@ -2,7 +2,14 @@ import { asyncHandler } from '../../../shared/utils/async-handler.util.js';
 import { sendSuccess, sendError } from '../../../shared/utils/api-response.util.js';
 import { hashPassword, comparePassword } from '../../../shared/utils/password.util.js';
 import { signUserAccessToken } from '../../../shared/utils/jwt.util.js';
-import { generateRefreshToken } from '../../../shared/utils/token.util.js';
+import {
+  generateRefreshToken,
+  generatePasswordResetToken,
+  hashPasswordResetToken,
+} from '../../../shared/utils/token.util.js';
+import { sendPasswordResetEmail, sendEmailVerificationEmail } from '../../../shared/services/email.service.js';
+import { isGmailAddress } from '../../../shared/utils/gmail-email.util.js';
+import { env } from '../../../config/env.js';
 import { authModel } from './auth.model.js';
 import { authView } from './auth.view.js';
 
@@ -27,6 +34,36 @@ async function issueTokens(user, deviceId) {
   return { accessToken, refreshToken };
 }
 
+function buildResetUrl(token) {
+  const base = env.frontendUrl ?? 'http://localhost:5173';
+  return `${base.replace(/\/$/, '')}/reset-password?token=${encodeURIComponent(token)}`;
+}
+
+function buildVerifyUrl(token) {
+  const base = env.frontendUrl ?? 'http://localhost:5173';
+  return `${base.replace(/\/$/, '')}/verify-email?token=${encodeURIComponent(token)}`;
+}
+
+async function sendPasswordResetForUser(user, locale) {
+  const { token, hash } = generatePasswordResetToken();
+  await authModel.createPasswordResetToken(user.id, hash);
+  await sendPasswordResetEmail({
+    to: user.email,
+    resetUrl: buildResetUrl(token),
+    locale,
+  });
+}
+
+async function sendVerificationForUser(user, locale) {
+  const { token, hash } = generatePasswordResetToken();
+  await authModel.createEmailVerificationToken(user.id, hash);
+  await sendEmailVerificationEmail({
+    to: user.email,
+    verifyUrl: buildVerifyUrl(token),
+    locale,
+  });
+}
+
 export const authController = {
   register: asyncHandler(async (req, res) => {
     const { name, email, password, deviceId } = req.body;
@@ -37,6 +74,9 @@ export const authController = {
     }
     if (validationError) {
       return sendError(res, { status: 400, message: req.t(validationError) });
+    }
+    if (!isGmailAddress(email)) {
+      return sendError(res, { status: 400, message: req.t('user.auth.gmailRequired') });
     }
 
     const existing = await authModel.findByEmail(email.toLowerCase());
@@ -51,11 +91,13 @@ export const authController = {
       passwordHash,
     });
 
+    await sendVerificationForUser(user, req.locale ?? 'tr');
+
     const tokens = await issueTokens(user, deviceId);
 
     sendSuccess(res, {
       status: 201,
-      message: req.t('user.auth.register.success'),
+      message: req.t('user.auth.register.successVerify'),
       data: authView.formatAuthResponse({ user, ...tokens }),
     });
   }),
@@ -126,5 +168,136 @@ export const authController = {
   me: asyncHandler(async (req, res) => {
     const user = await authModel.findById(req.user.id);
     sendSuccess(res, { data: authView.formatUser(user) });
+  }),
+
+  updateProfile: asyncHandler(async (req, res) => {
+    const { name, lastName, phone, billingName, taxOffice, billingAddress } = req.body;
+
+    if (!name?.trim()) {
+      return sendError(res, { status: 400, message: req.t('user.profile.missingName') });
+    }
+
+    const user = await authModel.updateProfile(req.user.id, {
+      name: name.trim(),
+      lastName: lastName?.trim() || null,
+      phone: phone?.trim() || null,
+      billingName: billingName?.trim() || null,
+      taxOffice: taxOffice?.trim() || null,
+      billingAddress: billingAddress?.trim() || null,
+    });
+
+    sendSuccess(res, {
+      message: req.t('user.profile.update.success'),
+      data: authView.formatUser(user),
+    });
+  }),
+
+  forgotPassword: asyncHandler(async (req, res) => {
+    const email = req.body.email?.toLowerCase()?.trim();
+    if (!email) {
+      return sendError(res, { status: 400, message: req.t('user.auth.missingFields') });
+    }
+
+    const user = await authModel.findByEmail(email);
+    if (user?.is_active) {
+      await sendPasswordResetForUser(user, req.locale ?? 'tr');
+    }
+
+    sendSuccess(res, { message: req.t('user.auth.forgotPassword.success') });
+  }),
+
+  requestPasswordReset: asyncHandler(async (req, res) => {
+    const user = await authModel.findById(req.user.id);
+    if (!user?.is_active) {
+      return sendError(res, { status: 401, message: req.t('user.auth.unauthorized') });
+    }
+
+    await sendPasswordResetForUser(user, req.locale ?? 'tr');
+
+    sendSuccess(res, { message: req.t('user.auth.forgotPassword.success') });
+  }),
+
+  validateResetToken: asyncHandler(async (req, res) => {
+    const token = req.query.token?.trim();
+    if (!token) {
+      return sendError(res, { status: 400, message: req.t('user.auth.resetPassword.invalidToken') });
+    }
+
+    const record = await authModel.findValidPasswordResetToken(hashPasswordResetToken(token));
+    if (!record || !record.is_active) {
+      return sendError(res, { status: 400, message: req.t('user.auth.resetPassword.invalidToken') });
+    }
+
+    sendSuccess(res, { data: { valid: true } });
+  }),
+
+  resetPassword: asyncHandler(async (req, res) => {
+    const { token, password } = req.body;
+
+    if (!token?.trim() || !password) {
+      return sendError(res, { status: 400, message: req.t('user.auth.missingFields') });
+    }
+    if (password.length < 8) {
+      return sendError(res, { status: 400, message: req.t('user.auth.weakPassword') });
+    }
+
+    const record = await authModel.findValidPasswordResetToken(hashPasswordResetToken(token.trim()));
+    if (!record || !record.is_active) {
+      return sendError(res, { status: 400, message: req.t('user.auth.resetPassword.invalidToken') });
+    }
+
+    const passwordHash = await hashPassword(password);
+    await authModel.updatePassword(record.user_id, passwordHash);
+    await authModel.markPasswordResetTokenUsed(record.id);
+    await authModel.invalidateAllSessions(record.user_id);
+
+    sendSuccess(res, { message: req.t('user.auth.resetPassword.success') });
+  }),
+
+  validateVerifyToken: asyncHandler(async (req, res) => {
+    const token = req.query.token?.trim();
+    if (!token) {
+      return sendError(res, { status: 400, message: req.t('user.auth.verifyEmail.invalidToken') });
+    }
+
+    const record = await authModel.findValidEmailVerificationToken(hashPasswordResetToken(token));
+    if (!record || !record.is_active) {
+      return sendError(res, { status: 400, message: req.t('user.auth.verifyEmail.invalidToken') });
+    }
+
+    sendSuccess(res, { data: { valid: true } });
+  }),
+
+  verifyEmail: asyncHandler(async (req, res) => {
+    const token = req.body.token?.trim();
+    if (!token) {
+      return sendError(res, { status: 400, message: req.t('user.auth.missingFields') });
+    }
+
+    const record = await authModel.findValidEmailVerificationToken(hashPasswordResetToken(token));
+    if (!record || !record.is_active) {
+      return sendError(res, { status: 400, message: req.t('user.auth.verifyEmail.invalidToken') });
+    }
+
+    if (!record.email_verified_at) {
+      await authModel.markEmailVerified(record.user_id);
+      await authModel.markEmailVerificationTokenUsed(record.id);
+    }
+
+    sendSuccess(res, { message: req.t('user.auth.verifyEmail.success') });
+  }),
+
+  resendVerification: asyncHandler(async (req, res) => {
+    const user = await authModel.findById(req.user.id);
+    if (!user?.is_active) {
+      return sendError(res, { status: 401, message: req.t('user.auth.unauthorized') });
+    }
+    if (user.email_verified_at) {
+      return sendSuccess(res, { message: req.t('user.auth.verifyEmail.alreadyVerified') });
+    }
+
+    await sendVerificationForUser(user, req.locale ?? 'tr');
+
+    sendSuccess(res, { message: req.t('user.auth.verifyEmail.resent') });
   }),
 };

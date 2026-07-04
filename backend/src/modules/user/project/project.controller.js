@@ -13,9 +13,10 @@ import {
   resolveSectionContent,
 } from '../../../shared/constants/project-sections.constants.js';
 import { buildDefaultSectionDoc, buildThesisKapakDoc, buildOzDocFromParagraphs, buildAbstractDocFromParagraphs, parseGeneratedParagraphs, prepareOzSourceText } from '../../../shared/constants/project-section-defaults.js';
-import { runGemini, localeInstruction } from '../../../shared/services/gemini.service.js';
+import { localeInstruction } from '../../../shared/services/gemini.service.js';
+import { executeAiCommand } from '../../../shared/services/ai-execution.service.js';
+import { AI_COMMAND_TYPES } from '../../../shared/constants/ai-command-types.constants.js';
 import { tiptapJsonToPlainText } from '../../../shared/services/google-docs.service.js';
-import { aiModel } from '../ai/ai.model.js';
 import {
   getProjectContext,
   pickProjectMetadata,
@@ -35,6 +36,10 @@ import {
   sortBibliographyEntries,
   buildKaynakcaDocFromEntries,
 } from '../../../shared/utils/turkish-bibliography.util.js';
+import {
+  collectAppendixInfosFromDoc,
+  buildEklerDocFromAppendixInfos,
+} from '../../../shared/utils/appendix-info.util.js';
 import { libraryModel } from '../library/library.model.js';
 import { libraryView } from '../library/library.view.js';
 import { commentModel } from './comment.model.js';
@@ -281,11 +286,13 @@ export const projectController = {
       .join(' ');
 
     try {
-      const { text, tokensUsed } = await runGemini({
+      const { text } = await executeAiCommand({
+        userId: req.user.id,
+        projectId,
+        commandType: AI_COMMAND_TYPES.GENERATE_OZ,
         systemInstruction,
         parts: [{ text: bodyText }],
       });
-      await aiModel.consumeTokens(req.user.id, tokensUsed);
 
       const paragraphs = parseGeneratedParagraphs(text);
       if (paragraphs.length < 3) {
@@ -351,11 +358,13 @@ export const projectController = {
     ].join(' ');
 
     try {
-      const { text, tokensUsed } = await runGemini({
+      const { text } = await executeAiCommand({
+        userId: req.user.id,
+        projectId,
+        commandType: AI_COMMAND_TYPES.GENERATE_ABSTRACT,
         systemInstruction,
         parts: [{ text: ozText }],
       });
-      await aiModel.consumeTokens(req.user.id, tokensUsed);
 
       const paragraphs = parseGeneratedParagraphs(text);
       if (!paragraphs.length) {
@@ -437,6 +446,47 @@ export const projectController = {
     sendSuccess(res, {
       message: req.t('user.project.kaynakca.generated'),
       data: { content: kaynakcaDoc },
+    });
+  }),
+
+  generateEkler: asyncHandler(async (req, res) => {
+    const projectId = Number(req.params.projectId);
+    const access = await projectModel.findAccessibleProject(projectId, req.user.id);
+
+    if (!access) {
+      return sendError(res, {
+        status: 404,
+        message: req.t('user.project.get.notFound'),
+      });
+    }
+
+    if (!access.isOwner) {
+      return sendError(res, {
+        status: 403,
+        message: req.t('user.project.content.readOnly'),
+      });
+    }
+
+    const collected = [];
+    for (const section of PROJECT_SECTION_SLUGS) {
+      if (section === 'ekler') continue;
+      const doc = projectModel.getSectionContent(access.project, section);
+      if (doc) collected.push(...collectAppendixInfosFromDoc(doc));
+    }
+
+    if (!collected.length) {
+      return sendError(res, {
+        status: 400,
+        message: req.t('user.project.ekler.emptyAppendixInfo'),
+      });
+    }
+
+    const eklerDoc = buildEklerDocFromAppendixInfos(collected);
+    await projectModel.saveSectionContent(projectId, req.user.id, 'ekler', eklerDoc);
+
+    sendSuccess(res, {
+      message: req.t('user.project.ekler.generated'),
+      data: { content: eklerDoc },
     });
   }),
 

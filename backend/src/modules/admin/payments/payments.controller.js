@@ -38,7 +38,7 @@ export const paymentsController = {
 
   approve: asyncHandler(async (req, res) => {
     const paymentId = Number(req.params.paymentId);
-    const { adminNotes } = req.body ?? {};
+    const { adminNotes, invoiceNumber, invoicePdfUrl } = req.body ?? {};
 
     const existing = await paymentsModel.findById(paymentId);
     if (!existing) {
@@ -52,6 +52,8 @@ export const paymentsController = {
       status: 'approved',
       adminId: req.admin.id,
       adminNotes,
+      invoiceNumber: invoiceNumber?.trim() || null,
+      invoicePdfUrl: invoicePdfUrl?.trim() || null,
     });
 
     if (!payment) {

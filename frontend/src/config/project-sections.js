@@ -24,6 +24,7 @@ export const EDITOR_SECTION_CONFIG = {
     imageCitations: true,
     checkFootnotes: true,
     ai: true,
+    appendixInfoMarkers: true,
     headings: [1, 2, 3],
     bold: true,
     italic: true,
@@ -66,6 +67,7 @@ export const EDITOR_SECTION_CONFIG = {
   onsoz: {
     footnotes: true,
     ai: true,
+    appendixInfoMarkers: true,
     headings: [1, 2],
     bold: true,
     italic: true,
@@ -83,6 +85,7 @@ export const EDITOR_SECTION_CONFIG = {
     orderedList: false,
     blockquote: false,
     appendixEntries: true,
+    generateEkler: true,
   },
   kisaltmalar: {
     footnotes: false,

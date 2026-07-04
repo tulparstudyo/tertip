@@ -8,7 +8,7 @@ import PublicSiteMobileNav from '@/components/PublicSiteMobileNav.vue';
 
 const { t } = useI18n();
 const router = useRouter();
-const { register } = useAuth();
+const { register, postAuthRoute } = useAuth();
 
 const name = ref('');
 const email = ref('');
@@ -19,7 +19,7 @@ async function handleSubmit() {
   loading.value = true;
   try {
     await register(name.value, email.value, password.value);
-    router.push({ name: 'dashboard' });
+    router.push(postAuthRoute());
   } catch {
     // API toast shows server message.
   } finally {
@@ -59,8 +59,10 @@ async function handleSubmit() {
                 type="email"
                 required
                 autocomplete="email"
+                placeholder="ornek@gmail.com"
                 class="w-full border border-slate-300 rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
               />
+              <p class="text-xs text-slate-500 mt-1">{{ t('auth.register.gmailHint') }}</p>
             </div>
             <div>
               <label class="block text-sm font-medium text-slate-700 mb-1">{{ t('auth.password') }}</label>

@@ -227,6 +227,7 @@ async function buildOcrFormData() {
     const blob = await fetch(remoteImageUrl.value).then((r) => r.blob());
     formData.append('image', blob, 'citation.jpg');
   }
+  formData.append('projectId', String(props.projectId));
   return formData;
 }
 

@@ -2,11 +2,12 @@
 import { RouterLink, RouterView, useRouter, useRoute } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { watch, onMounted } from 'vue';
-import { IconHome, IconFileText, IconBook, IconSettings } from '@tabler/icons-vue';
+import { IconHome, IconFileText, IconBook, IconSettings, IconReceipt } from '@tabler/icons-vue';
 import { setLocale } from '@/i18n';
 import { useAuth } from '@/composables/useAuth';
 import { useNavAutoHide } from '@/composables/useNavAutoHide.js';
 import { tablerIconProps } from '@/constants/icons.js';
+import WhatsAppMobileNavLink from '@/components/WhatsAppMobileNavLink.vue';
 
 const { t, locale } = useI18n();
 const router = useRouter();
@@ -74,6 +75,14 @@ function toggleLocale() {
               {{ t('nav.library') }}
             </RouterLink>
             <RouterLink
+              to="/app/payments"
+              class="desktop-nav-item"
+              :class="{ 'desktop-nav-item--active': isNavActive('/app/payments') }"
+            >
+              <IconReceipt v-bind="headerNavIcon" aria-hidden="true" />
+              {{ t('nav.payments') }}
+            </RouterLink>
+            <RouterLink
               to="/app/settings/google"
               class="desktop-nav-item"
               :class="{ 'desktop-nav-item--active': isNavActive('/app/settings') }"
@@ -91,7 +100,12 @@ function toggleLocale() {
           >
             {{ locale }}
           </button>
-          <span class="text-slate-500 hidden sm:inline">{{ user?.name }}</span>
+          <RouterLink
+            to="/app/profile"
+            class="text-slate-500 hidden sm:inline hover:text-indigo-600 transition-colors"
+          >
+            {{ user?.displayName ?? user?.name }}
+          </RouterLink>
           <button
             type="button"
             class="text-slate-600 hover:text-red-600"
@@ -141,6 +155,7 @@ function toggleLocale() {
         >
           <IconSettings v-bind="navIcon" aria-hidden="true" />
         </RouterLink>
+        <WhatsAppMobileNavLink variant="app" />
       </div>
     </nav>
 

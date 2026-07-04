@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { asyncHandler } from '../shared/utils/async-handler.util.js';
 import { sendSuccess } from '../shared/utils/api-response.util.js';
+import { env } from '../config/env.js';
 import { landingModel } from '../modules/admin/landing/landing.model.js';
 import { landingView } from '../modules/admin/landing/landing.view.js';
 
@@ -12,7 +13,21 @@ router.get(
     const data = await landingModel.getContent();
     sendSuccess(res, {
       message: req.t('public.landing.get.success'),
-      data: landingView.formatLanding(data),
+      data: landingView.formatLanding(data, { resolveEnv: true }),
+    });
+  }),
+);
+
+router.get(
+  '/site-config',
+  asyncHandler(async (req, res) => {
+    sendSuccess(res, {
+      message: req.t('public.siteConfig.get.success'),
+      data: {
+        whatsappNumber: env.whatsappNumber,
+        paymentAmount: env.paymentAmount,
+        paymentCurrency: env.paymentCurrency,
+      },
     });
   }),
 );

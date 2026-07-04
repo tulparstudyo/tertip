@@ -44,4 +44,12 @@ export const bankTransferModel = {
       totalPages: Math.max(1, Math.ceil(total / limit)),
     };
   },
+
+  async findByIdForUser(id, userId) {
+    const { rows } = await pool.query(
+      `SELECT * FROM bank_transfers WHERE id = $1 AND user_id = $2`,
+      [id, userId],
+    );
+    return rows[0] ?? null;
+  },
 };

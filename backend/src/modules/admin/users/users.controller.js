@@ -38,7 +38,8 @@ export const usersController = {
   }),
 
   create: asyncHandler(async (req, res) => {
-    const { name, email, password, aiTokenQuota } = req.body;
+    const { name, email, password, aiCommandQuota, aiTokenQuota } = req.body;
+    const quota = aiCommandQuota !== undefined ? aiCommandQuota : aiTokenQuota;
 
     if (!name?.trim() || !email?.trim() || !password) {
       return sendError(res, { status: 400, message: req.t('admin.users.missingFields') });
@@ -57,7 +58,7 @@ export const usersController = {
       name: name.trim(),
       email: email.toLowerCase().trim(),
       passwordHash,
-      aiTokenQuota: aiTokenQuota !== undefined ? Number(aiTokenQuota) : undefined,
+      aiCommandQuota: quota !== undefined ? Number(quota) : undefined,
     });
 
     sendSuccess(res, {
@@ -74,12 +75,13 @@ export const usersController = {
       return sendError(res, { status: 404, message: req.t('admin.users.notFound') });
     }
 
-    const { name, email, password, aiTokenQuota } = req.body;
+    const { name, email, password, aiCommandQuota, aiTokenQuota } = req.body;
+    const quota = aiCommandQuota !== undefined ? aiCommandQuota : aiTokenQuota;
     const updates = {};
 
     if (name !== undefined) updates.name = name.trim();
     if (email !== undefined) updates.email = email.toLowerCase().trim();
-    if (aiTokenQuota !== undefined) updates.aiTokenQuota = Number(aiTokenQuota);
+    if (quota !== undefined) updates.aiCommandQuota = Number(quota);
     if (password) {
       if (password.length < 8) {
         return sendError(res, { status: 400, message: req.t('admin.users.weakPassword') });

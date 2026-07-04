@@ -40,6 +40,11 @@ loadStoredUser();
 
 export function useAuth() {
   const isAuthenticated = computed(() => Boolean(accessToken.value));
+  const isEmailVerified = computed(() => Boolean(user.value?.emailVerified));
+
+  function postAuthRoute() {
+    return isEmailVerified.value ? { name: 'dashboard' } : { name: 'verify-email-pending' };
+  }
 
   async function login(email, password) {
     const res = await api('/user/auth/login', {
@@ -83,6 +88,8 @@ export function useAuth() {
   return {
     user,
     isAuthenticated,
+    isEmailVerified,
+    postAuthRoute,
     login,
     register,
     logout,

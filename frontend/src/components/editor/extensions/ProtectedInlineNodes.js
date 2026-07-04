@@ -4,7 +4,9 @@ import { ReplaceAroundStep, ReplaceStep } from '@tiptap/pm/transform';
 
 export const ALLOW_PROTECTED_DELETE_META = 'allowProtectedNodeDelete';
 
-export const PROTECTED_INLINE_NODE_NAMES = new Set(['academicFootnote', 'editorComment']);
+export const PROTECTED_INLINE_NODE_NAMES = new Set(['academicFootnote', 'editorComment', 'appendixInfo']);
+
+export const PROTECTED_NODE_NAMES = PROTECTED_INLINE_NODE_NAMES;
 
 function selectionTargetsProtectedNode(state) {
   const { selection } = state;

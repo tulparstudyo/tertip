@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { userAuthMiddleware } from '../../../shared/middleware/user-auth.middleware.js';
+import { requireEmailVerifiedMiddleware } from '../../../shared/middleware/require-email-verified.middleware.js';
 import { libraryUpload, excelUpload } from '../../../shared/middleware/upload.middleware.js';
 import { libraryController } from './library.controller.js';
 
@@ -8,6 +9,7 @@ const router = Router();
 router.get('/stream/:gatewayToken', libraryController.streamFile);
 
 router.use(userAuthMiddleware);
+router.use(requireEmailVerifiedMiddleware);
 
 router.get('/sources', libraryController.listSources);
 router.get('/sources/export', libraryController.exportSourcesExcel);

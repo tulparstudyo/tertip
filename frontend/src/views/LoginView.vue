@@ -8,7 +8,7 @@ import PublicSiteMobileNav from '@/components/PublicSiteMobileNav.vue';
 
 const { t } = useI18n();
 const router = useRouter();
-const { login } = useAuth();
+const { login, postAuthRoute } = useAuth();
 
 const email = ref('');
 const password = ref('');
@@ -18,7 +18,7 @@ async function handleSubmit() {
   loading.value = true;
   try {
     await login(email.value, password.value);
-    router.push({ name: 'dashboard' });
+    router.push(postAuthRoute());
   } catch {
     // API toast shows server message.
   } finally {
@@ -52,7 +52,12 @@ async function handleSubmit() {
               />
             </div>
             <div>
-              <label class="block text-sm font-medium text-slate-700 mb-1">{{ t('auth.password') }}</label>
+              <div class="flex items-center justify-between gap-2 mb-1">
+                <label class="block text-sm font-medium text-slate-700">{{ t('auth.password') }}</label>
+                <RouterLink to="/forgot-password" class="text-xs text-indigo-600 hover:underline">
+                  {{ t('auth.forgotPassword.link') }}
+                </RouterLink>
+              </div>
               <input
                 v-model="password"
                 type="password"

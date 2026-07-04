@@ -19,13 +19,13 @@ const form = ref({
   name: '',
   email: '',
   password: '',
-  aiTokenQuota: 500000,
+  aiCommandQuota: 100,
 });
 
 const isEditing = computed(() => editingId.value !== null);
 
 function emptyForm() {
-  form.value = { name: '', email: '', password: '', aiTokenQuota: 500000 };
+  form.value = { name: '', email: '', password: '', aiCommandQuota: 100 };
   editingId.value = null;
 }
 
@@ -40,7 +40,7 @@ function openEdit(item) {
     name: item.name,
     email: item.email,
     password: '',
-    aiTokenQuota: item.aiTokenQuota,
+    aiCommandQuota: item.aiCommandQuota,
   };
   showForm.value = true;
 }
@@ -76,7 +76,7 @@ async function handleSubmit() {
       const body = {
         name: form.value.name,
         email: form.value.email,
-        aiTokenQuota: Number(form.value.aiTokenQuota),
+        aiCommandQuota: Number(form.value.aiCommandQuota),
       };
       if (form.value.password) body.password = form.value.password;
       await adminApi(`/users/${editingId.value}`, { method: 'PUT', body, notify: true });
@@ -104,7 +104,7 @@ async function toggleActive(item) {
 }
 
 function formatQuota(used, quota) {
-  return `${Math.round(used / 1000)}K / ${Math.round(quota / 1000)}K`;
+  return `${used} / ${quota}`;
 }
 
 onMounted(loadItems);
@@ -164,7 +164,7 @@ onMounted(loadItems);
         </div>
         <div>
           <label class="block text-sm font-medium mb-1">{{ t('admin.users.aiQuota') }}</label>
-          <input v-model.number="form.aiTokenQuota" type="number" min="0" class="w-full border rounded-lg px-3 py-2" />
+          <input v-model.number="form.aiCommandQuota" type="number" min="0" class="w-full border rounded-lg px-3 py-2" />
         </div>
         <div class="sm:col-span-2 flex gap-2">
           <button type="submit" :disabled="saving" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm">
@@ -193,7 +193,7 @@ onMounted(loadItems);
           <tr v-for="item in items" :key="item.id" class="border-b last:border-0">
             <td class="p-3">{{ item.name }}</td>
             <td class="p-3 text-slate-600">{{ item.email }}</td>
-            <td class="p-3 text-slate-600">{{ formatQuota(item.aiTokenUsed, item.aiTokenQuota) }}</td>
+            <td class="p-3 text-slate-600">{{ formatQuota(item.aiCommandsUsed, item.aiCommandQuota) }}</td>
             <td class="p-3">
               <span
                 class="inline-flex px-2 py-0.5 rounded text-xs font-medium"

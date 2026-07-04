@@ -29,7 +29,8 @@ export const usersModel = {
 
     const listParams = [...params, limit, offset];
     const { rows } = await pool.query(
-      `SELECT u.id, u.name, u.email, u.is_active, u.ai_token_quota, u.ai_token_used, u.created_at,
+      `SELECT u.id, u.name, u.email, u.is_active,
+              u.ai_command_quota, u.ai_commands_used, u.ai_quota_period_start, u.created_at,
               (SELECT COUNT(*)::int FROM projects p WHERE p.user_id = u.id) AS project_count
        FROM users u ${where}
        ORDER BY u.created_at DESC
@@ -48,7 +49,8 @@ export const usersModel = {
 
   async findById(id) {
     const { rows } = await pool.query(
-      `SELECT id, name, email, is_active, ai_token_quota, ai_token_used, created_at
+      `SELECT id, name, email, is_active,
+              ai_command_quota, ai_commands_used, ai_quota_period_start, created_at
        FROM users WHERE id = $1`,
       [id],
     );
@@ -60,17 +62,18 @@ export const usersModel = {
     return rows[0] ?? null;
   },
 
-  async create({ name, email, passwordHash, aiTokenQuota }) {
+  async create({ name, email, passwordHash, aiCommandQuota }) {
     const { rows } = await pool.query(
-      `INSERT INTO users (name, email, password_hash, ai_token_quota)
-       VALUES ($1, $2, $3, $4)
-       RETURNING id, name, email, is_active, ai_token_quota, ai_token_used, created_at`,
-      [name, email, passwordHash, aiTokenQuota ?? 500000],
+      `INSERT INTO users (name, email, password_hash, ai_command_quota, email_verified_at)
+       VALUES ($1, $2, $3, $4, NOW())
+       RETURNING id, name, email, is_active,
+                 ai_command_quota, ai_commands_used, ai_quota_period_start, created_at`,
+      [name, email, passwordHash, aiCommandQuota ?? 100],
     );
     return rows[0];
   },
 
-  async update(id, { name, email, passwordHash, aiTokenQuota }) {
+  async update(id, { name, email, passwordHash, aiCommandQuota }) {
     const fields = [];
     const values = [];
     let idx = 1;
@@ -87,9 +90,9 @@ export const usersModel = {
       fields.push(`password_hash = $${idx++}`);
       values.push(passwordHash);
     }
-    if (aiTokenQuota !== undefined) {
-      fields.push(`ai_token_quota = $${idx++}`);
-      values.push(aiTokenQuota);
+    if (aiCommandQuota !== undefined) {
+      fields.push(`ai_command_quota = $${idx++}`);
+      values.push(aiCommandQuota);
     }
 
     if (fields.length === 0) return this.findById(id);
@@ -97,7 +100,8 @@ export const usersModel = {
     values.push(id);
     const { rows } = await pool.query(
       `UPDATE users SET ${fields.join(', ')} WHERE id = $${idx}
-       RETURNING id, name, email, is_active, ai_token_quota, ai_token_used, created_at`,
+       RETURNING id, name, email, is_active,
+                 ai_command_quota, ai_commands_used, ai_quota_period_start, created_at`,
       values,
     );
     return rows[0] ?? null;
@@ -106,7 +110,8 @@ export const usersModel = {
   async setActive(id, isActive) {
     const { rows } = await pool.query(
       `UPDATE users SET is_active = $1 WHERE id = $2
-       RETURNING id, name, email, is_active, ai_token_quota, ai_token_used, created_at`,
+       RETURNING id, name, email, is_active,
+                 ai_command_quota, ai_commands_used, ai_quota_period_start, created_at`,
       [isActive, id],
     );
     return rows[0] ?? null;

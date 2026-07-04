@@ -12,6 +12,8 @@ const searchQuery = ref('');
 const filterStatus = ref('pending');
 const reviewingId = ref(null);
 const adminNotes = ref('');
+const invoiceNumber = ref('');
+const invoicePdfUrl = ref('');
 
 async function loadItems() {
   loading.value = true;
@@ -34,20 +36,30 @@ async function loadItems() {
 function openReview(item) {
   reviewingId.value = item.id;
   adminNotes.value = '';
+  invoiceNumber.value = '';
+  invoicePdfUrl.value = '';
 }
 
 function closeReview() {
   reviewingId.value = null;
   adminNotes.value = '';
+  invoiceNumber.value = '';
+  invoicePdfUrl.value = '';
 }
 
 async function handleReview(action) {
   const id = reviewingId.value;
   if (!id) return;
 
+  const body = { adminNotes: adminNotes.value || undefined };
+  if (action === 'approve') {
+    body.invoiceNumber = invoiceNumber.value.trim() || undefined;
+    body.invoicePdfUrl = invoicePdfUrl.value.trim() || undefined;
+  }
+
   await adminApi(`/payments/${id}/${action}`, {
     method: 'POST',
-    body: { adminNotes: adminNotes.value || undefined },
+    body,
     notify: true,
   });
   closeReview();
@@ -94,11 +106,22 @@ onMounted(loadItems);
       </select>
     </div>
 
-    <div v-if="reviewingId" class="bg-white rounded-xl border border-indigo-200 p-6">
-      <h3 class="font-semibold text-slate-800 mb-4">{{ t('admin.payments.review') }}</h3>
-      <div class="mb-4">
+    <div v-if="reviewingId" class="bg-white rounded-xl border border-indigo-200 p-6 space-y-4">
+      <h3 class="font-semibold text-slate-800">{{ t('admin.payments.review') }}</h3>
+      <div>
         <label class="block text-sm font-medium mb-1">{{ t('admin.payments.adminNotes') }}</label>
         <textarea v-model="adminNotes" rows="3" class="w-full border rounded-lg px-3 py-2 text-sm" />
+      </div>
+      <div class="grid sm:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-medium mb-1">{{ t('admin.payments.invoiceNumber') }}</label>
+          <input v-model="invoiceNumber" class="w-full border rounded-lg px-3 py-2 text-sm" />
+          <p class="text-xs text-slate-400 mt-1">{{ t('admin.payments.invoiceHint') }}</p>
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">{{ t('admin.payments.invoicePdfUrl') }}</label>
+          <input v-model="invoicePdfUrl" type="url" class="w-full border rounded-lg px-3 py-2 text-sm" />
+        </div>
       </div>
       <div class="flex gap-2">
         <button
@@ -130,6 +153,7 @@ onMounted(loadItems);
             <th class="text-left p-3 font-medium">{{ t('admin.payments.amount') }}</th>
             <th class="text-left p-3 font-medium">{{ t('admin.payments.reference') }}</th>
             <th class="text-left p-3 font-medium">{{ t('admin.payments.transferDate') }}</th>
+            <th class="text-left p-3 font-medium">{{ t('admin.payments.invoiceNumber') }}</th>
             <th class="text-left p-3 font-medium">{{ t('admin.status') }}</th>
             <th class="text-right p-3 font-medium">{{ t('admin.actions') }}</th>
           </tr>
@@ -143,6 +167,7 @@ onMounted(loadItems);
             <td class="p-3">{{ formatAmount(item.amount, item.currency) }}</td>
             <td class="p-3 text-slate-600">{{ item.referenceCode || '—' }}</td>
             <td class="p-3 text-slate-600">{{ formatDate(item.transferDate) }}</td>
+            <td class="p-3 text-slate-600">{{ item.invoiceNumber || '—' }}</td>
             <td class="p-3">
               <span class="inline-flex px-2 py-0.5 rounded text-xs font-medium" :class="statusClass(item.status)">
                 {{ statusLabel(item.status) }}
@@ -157,11 +182,22 @@ onMounted(loadItems);
               >
                 {{ t('admin.payments.review') }}
               </button>
-              <span v-else class="text-slate-400 text-xs">{{ item.reviewerName || '—' }}</span>
+              <template v-else>
+                <a
+                  v-if="item.invoicePdfUrl"
+                  :href="item.invoicePdfUrl"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="text-indigo-600 hover:underline text-xs"
+                >
+                  PDF
+                </a>
+                <span v-else class="text-slate-400 text-xs">{{ item.reviewerName || '—' }}</span>
+              </template>
             </td>
           </tr>
           <tr v-if="!items.length">
-            <td colspan="6" class="p-8 text-center text-slate-500">{{ t('admin.empty') }}</td>
+            <td colspan="7" class="p-8 text-center text-slate-500">{{ t('admin.empty') }}</td>
           </tr>
         </tbody>
       </table>

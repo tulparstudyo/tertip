@@ -51,4 +51,17 @@ export const env = {
   geminiApiKey: process.env.GEMINI_API_KEY ?? null,
   geminiModelFlash: process.env.GEMINI_MODEL_FLASH ?? 'gemini-2.5-flash',
   geminiModelPro: process.env.GEMINI_MODEL_PRO ?? 'gemini-2.5-pro',
+  whatsappNumber: process.env.WHATSAPP_NUMBER?.trim() || null,
+  paymentAmount: Number(process.env.PAYMENT_AMOUNT) || null,
+  paymentCurrency: process.env.PAYMENT_CURRENCY?.trim() || 'TRY',
+  smtp: {
+    host: process.env.SMTP_HOST?.trim() || null,
+    port: Number(process.env.SMTP_PORT) || 587,
+    secure: process.env.SMTP_SECURE === 'true',
+    user: process.env.SMTP_USER?.trim() || null,
+    pass: process.env.SMTP_PASS?.trim() || null,
+    from: process.env.SMTP_FROM?.trim() || null,
+  },
+  passwordResetExpiresHours: Number(process.env.PASSWORD_RESET_EXPIRES_HOURS) || 1,
+  emailVerificationExpiresHours: Number(process.env.EMAIL_VERIFICATION_EXPIRES_HOURS) || 48,
 };

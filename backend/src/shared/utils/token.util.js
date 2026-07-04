@@ -1,5 +1,14 @@
-import { randomBytes } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
 
 export function generateRefreshToken() {
   return randomBytes(64).toString('hex');
+}
+
+export function generatePasswordResetToken() {
+  const token = randomBytes(32).toString('hex');
+  return { token, hash: hashPasswordResetToken(token) };
+}
+
+export function hashPasswordResetToken(token) {
+  return createHash('sha256').update(token).digest('hex');
 }

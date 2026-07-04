@@ -10,6 +10,7 @@ import {
   IconLogin,
 } from '@tabler/icons-vue';
 import { tablerIconProps } from '@/constants/icons.js';
+import WhatsAppMobileNavLink from '@/components/WhatsAppMobileNavLink.vue';
 
 const { t } = useI18n();
 const route = useRoute();
@@ -47,6 +48,7 @@ function isActive(item) {
         <component :is="item.icon" v-bind="navIcon" aria-hidden="true" />
         <span class="public-mobile-nav-item__label">{{ t(item.label) }}</span>
       </RouterLink>
+      <WhatsAppMobileNavLink variant="public" />
     </div>
   </nav>
 </template>

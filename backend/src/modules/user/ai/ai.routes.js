@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import multer from 'multer';
 import { userAuthMiddleware } from '../../../shared/middleware/user-auth.middleware.js';
+import { requireEmailVerifiedMiddleware } from '../../../shared/middleware/require-email-verified.middleware.js';
 import { aiController } from './ai.controller.js';
 
 const upload = multer({
@@ -10,6 +11,11 @@ const upload = multer({
 
 const router = Router();
 router.use(userAuthMiddleware);
+router.use(requireEmailVerifiedMiddleware);
+
+router.get('/command-types', aiController.listCommandTypes);
+router.get('/logs', aiController.listLogs);
+router.get('/logs/:logId', aiController.getLog);
 
 router.post(
   '/voice-to-academic',

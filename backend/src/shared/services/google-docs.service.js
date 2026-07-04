@@ -105,6 +105,13 @@ function parseRuns(content) {
         commentText: node.attrs?.commentText ?? '',
         userName: node.attrs?.userName ?? '',
       });
+      continue;
+    }
+
+    if (node.type === 'appendixInfo') {
+      const number = node.attrs?.number ?? 1;
+      const title = node.attrs?.title ?? '';
+      runs.push({ text: `EK-${number}: ${title}`, bold: true });
     }
   }
 
@@ -148,13 +155,24 @@ function flattenBlockNode(node) {
     return [{ type: 'list', ordered: node.type === 'orderedList', items }];
   }
 
-  if (node.type === 'appendixEntry') {
+    if (node.type === 'appendixEntry') {
     return [
       {
         type: 'appendixEntry',
         number: node.attrs?.number ?? 1,
         title: node.attrs?.title ?? '',
         page: String(node.attrs?.page ?? ''),
+      },
+    ];
+  }
+
+  if (node.type === 'appendixInfo') {
+    const number = node.attrs?.number ?? 1;
+    const title = node.attrs?.title ?? '';
+    return [
+      {
+        type: 'paragraph',
+        runs: [{ text: `EK-${number}: ${title}`, bold: true }],
       },
     ];
   }
@@ -203,6 +221,7 @@ function sectionHasContent(doc) {
   if (serialized.includes('"academicFootnote"')) return true;
   if (serialized.includes('"appendixEntry"')) return true;
   if (serialized.includes('"bibliographyEntry"')) return true;
+  if (serialized.includes('"appendixInfo"')) return true;
   if (serialized.includes('"editorComment"')) return true;
   return tiptapJsonToPlainText(doc).trim().length > 0;
 }

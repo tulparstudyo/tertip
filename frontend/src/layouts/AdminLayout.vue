@@ -12,6 +12,7 @@ const navItems = [
   { to: '/admin', name: 'admin-dashboard', label: 'admin.nav.dashboard', exact: true },
   { to: '/admin/users', name: 'admin-users', label: 'admin.nav.users' },
   { to: '/admin/payments', name: 'admin-payments', label: 'admin.nav.payments' },
+  { to: '/admin/ai-logs', name: 'admin-ai-logs', label: 'admin.nav.aiLogs' },
   { to: '/admin/landing', name: 'admin-landing', label: 'admin.nav.landing' },
   { to: '/admin/admins', name: 'admin-admins', label: 'admin.nav.admins', superOnly: true },
 ];

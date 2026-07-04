@@ -30,6 +30,30 @@ const router = createRouter({
       meta: { guest: true },
     },
     {
+      path: '/forgot-password',
+      name: 'forgot-password',
+      component: () => import('@/views/ForgotPasswordView.vue'),
+      meta: { guest: true },
+    },
+    {
+      path: '/reset-password',
+      name: 'reset-password',
+      component: () => import('@/views/ResetPasswordView.vue'),
+      meta: { public: true, allowAuth: true },
+    },
+    {
+      path: '/verify-email',
+      name: 'verify-email',
+      component: () => import('@/views/VerifyEmailView.vue'),
+      meta: { public: true, allowAuth: true },
+    },
+    {
+      path: '/verify-email-pending',
+      name: 'verify-email-pending',
+      component: () => import('@/views/VerifyEmailPendingView.vue'),
+      meta: { requiresAuth: true, allowUnverified: true },
+    },
+    {
       path: '/admin/login',
       name: 'admin-login',
       component: () => import('@/views/admin/AdminLoginView.vue'),
@@ -70,6 +94,12 @@ const router = createRouter({
           component: () => import('@/views/admin/AdminLandingView.vue'),
           meta: { titleKey: 'admin.nav.landing' },
         },
+        {
+          path: 'ai-logs',
+          name: 'admin-ai-logs',
+          component: () => import('@/views/admin/AdminAiLogsView.vue'),
+          meta: { titleKey: 'admin.nav.aiLogs' },
+        },
       ],
     },
     {
@@ -86,6 +116,11 @@ const router = createRouter({
           path: 'library',
           name: 'library',
           component: () => import('@/views/LibraryView.vue'),
+        },
+        {
+          path: 'ai-usage',
+          name: 'ai-usage',
+          component: () => import('@/views/AiUsageView.vue'),
         },
         {
           path: 'projects',
@@ -109,13 +144,23 @@ const router = createRouter({
           name: 'settings-google',
           component: () => import('@/views/SettingsView.vue'),
         },
+        {
+          path: 'profile',
+          name: 'profile',
+          component: () => import('@/views/ProfileView.vue'),
+        },
+        {
+          path: 'payments',
+          name: 'payments',
+          component: () => import('@/views/PaymentsView.vue'),
+        },
       ],
     },
   ],
 });
 
-router.beforeEach((to) => {
-  const { isAuthenticated } = useAuth();
+router.beforeEach(async (to) => {
+  const { isAuthenticated, isEmailVerified, user, fetchMe } = useAuth();
   const { isAuthenticated: isAdminAuthenticated, isSuperAdmin } = useAdminAuth();
 
   if (to.meta.requiresAdmin && !isAdminAuthenticated.value) {
@@ -134,8 +179,29 @@ router.beforeEach((to) => {
     return { name: 'login' };
   }
 
-  if ((to.meta.guest || to.meta.public) && isAuthenticated.value) {
+  if (isAuthenticated.value && user.value?.emailVerified === undefined) {
+    try {
+      await fetchMe();
+    } catch {
+      return { name: 'login' };
+    }
+  }
+
+  if (
+    to.meta.requiresAuth
+    && !to.meta.allowUnverified
+    && isAuthenticated.value
+    && !isEmailVerified.value
+  ) {
+    return { name: 'verify-email-pending' };
+  }
+
+  if (to.name === 'verify-email-pending' && isEmailVerified.value) {
     return { name: 'dashboard' };
+  }
+
+  if ((to.meta.guest || to.meta.public) && isAuthenticated.value && !to.meta.allowAuth) {
+    return isEmailVerified.value ? { name: 'dashboard' } : { name: 'verify-email-pending' };
   }
 
   return true;

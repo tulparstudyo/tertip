@@ -2,6 +2,7 @@
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { IconPlayerPlay } from '@tabler/icons-vue';
+import { resolveConvenienceCover } from '@/utils/convenience-covers.js';
 
 const props = defineProps({
   item: { type: Object, required: true },
@@ -9,6 +10,7 @@ const props = defineProps({
 });
 
 const { t } = useI18n();
+const coverImage = computed(() => resolveConvenienceCover(props.item));
 
 function toEmbedUrl(url) {
   if (!url?.trim()) return null;
@@ -60,6 +62,23 @@ const isDirectVideo = computed(() => {
       >
         {{ t('landing.conveniences.videoUnsupported') }}
       </video>
+    </div>
+    <div
+      v-else-if="coverImage"
+      class="relative aspect-video rounded-xl overflow-hidden bg-slate-100 shadow-lg group"
+    >
+      <img
+        :src="coverImage"
+        :alt="item.title"
+        class="w-full h-full object-cover"
+        loading="lazy"
+      />
+      <div class="absolute inset-0 bg-slate-900/20 flex flex-col items-center justify-center">
+        <div class="w-14 h-14 rounded-full bg-white/90 shadow-md flex items-center justify-center">
+          <IconPlayerPlay class="w-7 h-7 text-indigo-600 ml-0.5" aria-hidden="true" />
+        </div>
+        <p class="mt-3 text-sm font-medium text-white drop-shadow">{{ t('landing.conveniences.videoPlaceholder') }}</p>
+      </div>
     </div>
     <div
       v-else

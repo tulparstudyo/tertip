@@ -11,6 +11,7 @@ import { api } from '@/api/client';
 import { toast } from '@/composables/useToast';
 import AcademicFootnote from './extensions/AcademicFootnote.js';
 import EditorComment from './extensions/EditorComment.js';
+import AppendixInfo from './extensions/AppendixInfo.js';
 import ProtectedInlineNodes from './extensions/ProtectedInlineNodes.js';
 import AppendixEntry from './extensions/AppendixEntry.js';
 import BibliographyEntry from './extensions/BibliographyEntry.js';
@@ -25,17 +26,23 @@ import {
   formatTurkishBibliographyEntry,
 } from '@/utils/turkish-bibliography.js';
 import ImageCitationModal from './ImageCitationModal.vue';
-import { IconPhoto, IconSparkles, IconBrandGoogleDrive, IconPlus, IconMinus, IconZoomReset, IconMessagePlus, IconBookmark } from '@tabler/icons-vue';
+import { IconPhoto, IconSparkles, IconBrandGoogleDrive, IconPlus, IconMinus, IconZoomReset, IconMessagePlus, IconBookmark, IconArrowUp } from '@tabler/icons-vue';
 import { tablerIconProps } from '@/constants/icons.js';
 import { getEditorSectionConfig } from '@/config/project-sections.js';
 import { getCookie, setCookie } from '@/utils/cookie.js';
 import { getEditorLineColumn, getVisibleEditorLineRange, getPosFromLineColumn } from '@/utils/editor-position.js';
 import { deleteProtectedNodeAt } from '@/utils/protected-node-delete.js';
 import { useNavAutoHide } from '@/composables/useNavAutoHide.js';
+import { useSiteConfig } from '@/composables/useSiteConfig.js';
+import {
+  getAppendixInfoInsertPos,
+  renumberAppendixInfosInEditor,
+} from '@/utils/appendix-info.js';
 import { centeredKisaltmalarTitle } from '@/utils/kisaltmalar-list.js';
 
 const toolbarIcon = tablerIconProps.toolbar;
 const { navHidden } = useNavAutoHide();
+const { hasWhatsApp } = useSiteConfig();
 
 const PAGE_ZOOM_MIN = 50;
 const PAGE_ZOOM_MAX = 200;
@@ -83,6 +90,8 @@ const props = defineProps({
 const emit = defineEmits(['comment-added', 'visible-lines-change', 'comments-updated']);
 
 let visibleLinesRaf = null;
+const SCROLL_TO_TOP_THRESHOLD = 240;
+const showScrollToTop = ref(false);
 
 function scheduleVisibleLinesUpdate() {
   if (!props.projectId) return;
@@ -94,6 +103,15 @@ function updateVisibleLines() {
   visibleLinesRaf = null;
   if (!editor.value || !props.projectId) return;
   emit('visible-lines-change', getVisibleEditorLineRange(editor.value));
+}
+
+function onWindowScroll() {
+  showScrollToTop.value = window.scrollY > SCROLL_TO_TOP_THRESHOLD;
+  scheduleVisibleLinesUpdate();
+}
+
+function scrollToPageTop() {
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 const { t } = useI18n();
@@ -136,6 +154,7 @@ const generateKapakLoading = ref(false);
 const generateOzLoading = ref(false);
 const generateAbstractLoading = ref(false);
 const generateKaynakcaLoading = ref(false);
+const generateEklerLoading = ref(false);
 const insertStandardAbbreviationsLoading = ref(false);
 const showAppendixModal = ref(false);
 const editingAppendixPos = ref(null);
@@ -150,6 +169,10 @@ const commentInsertPos = ref(null);
 const editingCommentPos = ref(null);
 const commentDeleting = ref(false);
 const commentForm = ref({ text: '' });
+const showAppendixInfoModal = ref(false);
+const editingAppendixInfoPos = ref(null);
+const appendixInfoSaving = ref(false);
+const appendixInfoForm = ref({ title: '' });
 const commentView = ref({
   commentId: null,
   commentText: '',
@@ -164,6 +187,14 @@ const showAddComment = computed(() => Boolean(props.projectId) && props.canEdit)
 
 const showInsertStandardAbbreviations = computed(
   () => Boolean(toolbarConfig.value.standardAbbreviations) && props.canEdit,
+);
+
+const showAppendixInfoMarker = computed(
+  () => Boolean(toolbarConfig.value.appendixInfoMarkers) && props.canEdit && props.projectId,
+);
+
+const showGenerateEkler = computed(
+  () => Boolean(toolbarConfig.value.generateEkler) && props.canEdit,
 );
 
 const showGenerateKapak = computed(
@@ -404,6 +435,25 @@ async function generateKaynakca() {
   }
 }
 
+async function generateEkler() {
+  if (!props.projectId || !showGenerateEkler.value) return;
+
+  generateEklerLoading.value = true;
+  try {
+    const res = await api(`/user/projects/${props.projectId}/generate-ekler`, {
+      method: 'POST',
+    });
+    skipSave = true;
+    editor.value?.commands.setContent(res.data?.content ?? buildDefaultContent());
+    skipSave = false;
+    saveCycleActive = false;
+  } catch {
+    // Error toast is already shown by api().
+  } finally {
+    generateEklerLoading.value = false;
+  }
+}
+
 async function insertStandardAbbreviations() {
   if (!showInsertStandardAbbreviations.value) return;
 
@@ -431,6 +481,7 @@ function buildEditorExtensions() {
       onSingleClick(dom) {
         clearFootnotePreviews();
         clearCommentPreviews();
+        clearAppendixInfoPreviews();
         dom.classList.add('is-preview');
       },
       onDoubleClick({ pos, attrs }) {
@@ -443,13 +494,30 @@ function buildEditorExtensions() {
     EditorComment.configure({
       onSingleClick(dom) {
         clearCommentPreviews();
+        clearAppendixInfoPreviews();
         clearFootnotePreviews();
         dom.classList.add('is-preview');
       },
       onDoubleClick({ pos, attrs }) {
         clearCommentPreviews();
+        clearAppendixInfoPreviews();
         clearFootnotePreviews();
         openCommentViewModal({ pos, attrs });
+      },
+    }),
+    AppendixInfo.configure({
+      onSingleClick(dom) {
+        clearAppendixInfoPreviews();
+        clearCommentPreviews();
+        clearFootnotePreviews();
+        dom.classList.add('is-preview');
+      },
+      onDoubleClick({ pos, attrs }) {
+        if (!props.canEdit) return;
+        clearAppendixInfoPreviews();
+        clearCommentPreviews();
+        clearFootnotePreviews();
+        openAppendixInfoEditModal({ pos, attrs });
       },
     }),
     AppendixEntry.configure({
@@ -717,6 +785,12 @@ function clearCommentPreviews() {
   });
 }
 
+function clearAppendixInfoPreviews() {
+  document.querySelectorAll('.ProseMirror .editor-appendix-info.is-preview').forEach((el) => {
+    el.classList.remove('is-preview');
+  });
+}
+
 function openCommentModal() {
   if (!editor.value || !props.projectId) return;
   commentInsertPos.value = editor.value.state.selection.from;
@@ -729,6 +803,79 @@ function closeCommentModal() {
   commentInsertPos.value = null;
   commentForm.value = { text: '' };
 }
+
+function openAppendixInfoModal() {
+  if (!editor.value || !props.projectId) return;
+  editingAppendixInfoPos.value = null;
+  appendixInfoForm.value = { title: '' };
+  showAppendixInfoModal.value = true;
+}
+
+function openAppendixInfoEditModal({ pos, attrs }) {
+  editingAppendixInfoPos.value = pos;
+  appendixInfoForm.value = { title: attrs.title ?? '' };
+  showAppendixInfoModal.value = true;
+}
+
+function closeAppendixInfoModal() {
+  showAppendixInfoModal.value = false;
+  editingAppendixInfoPos.value = null;
+  appendixInfoForm.value = { title: '' };
+}
+
+async function saveAppendixInfo() {
+  if (!editor.value || !appendixInfoForm.value.title.trim()) return;
+
+  appendixInfoSaving.value = true;
+  try {
+    const title = appendixInfoForm.value.title.trim();
+
+    if (editingAppendixInfoPos.value !== null) {
+      editor.value
+        ?.chain()
+        .focus()
+        .setNodeSelection(editingAppendixInfoPos.value)
+        .updateAttributes('appendixInfo', { title })
+        .run();
+    } else {
+      const insertPos = getAppendixInfoInsertPos(editor.value.state);
+      editor.value
+        ?.chain()
+        .focus()
+        .insertContentAt(insertPos, {
+          type: 'appendixInfo',
+          attrs: {
+            appendixInfoId: crypto.randomUUID(),
+            title,
+            number: 1,
+          },
+        })
+        .run();
+    }
+
+    renumberAppendixInfosInEditor(editor.value);
+    closeAppendixInfoModal();
+    toast.success(t('editor.appendixInfoSaved'));
+    await flushPendingSave();
+  } finally {
+    appendixInfoSaving.value = false;
+  }
+}
+
+function deleteAppendixInfo() {
+  if (editingAppendixInfoPos.value === null || !editor.value) return;
+  deleteProtectedNodeAt(editor.value, editingAppendixInfoPos.value);
+  renumberAppendixInfosInEditor(editor.value);
+  closeAppendixInfoModal();
+  toast.success(t('editor.appendixInfoDeleted'));
+  void flushPendingSave();
+}
+
+const appendixInfoModalTitle = computed(() => (
+  editingAppendixInfoPos.value !== null
+    ? t('editor.editAppendixInfo')
+    : t('editor.addAppendixInfo')
+));
 
 function openCommentViewModal({ pos, attrs }) {
   editingCommentPos.value = pos;
@@ -1368,7 +1515,7 @@ async function rewriteSelection() {
   try {
     const res = await api('/user/ai/rewrite-grammar', {
       method: 'POST',
-      body: { selectedText: selectedText.value, projectType: props.projectType },
+      body: { selectedText: selectedText.value, projectType: props.projectType, projectId: props.projectId },
     });
     aiRewriteState.value = {
       from,
@@ -1453,15 +1600,16 @@ watch(
 );
 
 onMounted(() => {
-  window.addEventListener('scroll', scheduleVisibleLinesUpdate, { passive: true });
+  window.addEventListener('scroll', onWindowScroll, { passive: true });
   window.addEventListener('resize', scheduleVisibleLinesUpdate, { passive: true });
+  onWindowScroll();
   scheduleVisibleLinesUpdate();
 });
 
 defineExpose({ syncCommentMarkersFromApi });
 
 onBeforeUnmount(() => {
-  window.removeEventListener('scroll', scheduleVisibleLinesUpdate);
+  window.removeEventListener('scroll', onWindowScroll);
   window.removeEventListener('resize', scheduleVisibleLinesUpdate);
   if (visibleLinesRaf) cancelAnimationFrame(visibleLinesRaf);
   void flushPendingSave();
@@ -1560,7 +1708,7 @@ onBeforeUnmount(() => {
         </div>
 
         <div
-          v-if="toolbarConfig.appendixEntries || toolbarConfig.footnotes || showCheckFootnotes || showImageCitations"
+          v-if="toolbarConfig.appendixEntries || showGenerateEkler"
           class="toolbar-group"
         >
           <button
@@ -1572,6 +1720,22 @@ onBeforeUnmount(() => {
           >
             {{ t('editor.addAppendix') }}
           </button>
+          <button
+            v-if="showGenerateEkler"
+            type="button"
+            class="toolbar-btn toolbar-btn--label toolbar-btn--success"
+            :disabled="generateEklerLoading"
+            :title="t('editor.generateEklerHint')"
+            @click="generateEkler"
+          >
+            {{ generateEklerLoading ? t('common.loading') : t('editor.generateEkler') }}
+          </button>
+        </div>
+
+        <div
+          v-if="toolbarConfig.footnotes || showCheckFootnotes || showImageCitations"
+          class="toolbar-group"
+        >
           <button
             v-if="toolbarConfig.footnotes"
             type="button"
@@ -1611,7 +1775,7 @@ onBeforeUnmount(() => {
           </button>
         </div>
 
-        <div v-if="showAddComment || showInsertStandardAbbreviations" class="toolbar-group">
+        <div v-if="showAddComment || showInsertStandardAbbreviations || showAppendixInfoMarker" class="toolbar-group">
           <button
             v-if="showAddComment"
             type="button"
@@ -1621,6 +1785,15 @@ onBeforeUnmount(() => {
             @click="openCommentModal"
           >
             <IconMessagePlus v-bind="toolbarIcon" aria-hidden="true" />
+          </button>
+          <button
+            v-if="showAppendixInfoMarker"
+            type="button"
+            class="toolbar-btn toolbar-btn--label"
+            :title="t('editor.addAppendixInfoHint')"
+            @click="openAppendixInfoModal"
+          >
+            {{ t('editor.addAppendixInfo') }}
           </button>
           <button
             v-if="showInsertStandardAbbreviations"
@@ -1990,6 +2163,46 @@ onBeforeUnmount(() => {
     </div>
 
     <div
+      v-if="showAppendixInfoModal"
+      class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
+    >
+      <div class="bg-white rounded-xl p-6 w-full max-w-md space-y-3">
+        <h3 class="font-semibold">{{ appendixInfoModalTitle }}</h3>
+        <p v-if="editingAppendixInfoPos === null" class="text-xs text-slate-500">
+          {{ t('editor.addAppendixInfoPositionHint') }}
+        </p>
+        <label class="block text-sm text-slate-600">{{ t('editor.appendixInfoText') }}</label>
+        <textarea
+          v-model="appendixInfoForm.title"
+          rows="3"
+          class="w-full border rounded-lg px-3 py-2 text-sm"
+          :placeholder="t('editor.appendixInfoPlaceholder')"
+        />
+        <div class="flex gap-2 justify-end">
+          <button
+            v-if="editingAppendixInfoPos !== null"
+            type="button"
+            class="px-4 py-2 border border-red-200 text-red-700 rounded-lg mr-auto"
+            @click="deleteAppendixInfo"
+          >
+            {{ t('editor.deleteAppendixInfo') }}
+          </button>
+          <button type="button" class="px-4 py-2 border rounded-lg" @click="closeAppendixInfoModal">
+            {{ t('common.cancel') }}
+          </button>
+          <button
+            type="button"
+            class="px-4 py-2 bg-indigo-600 text-white rounded-lg disabled:opacity-50"
+            :disabled="appendixInfoSaving || !appendixInfoForm.title.trim()"
+            @click="saveAppendixInfo"
+          >
+            {{ appendixInfoSaving ? t('common.loading') : t('common.save') }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div
       v-if="showCommentViewModal"
       class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
     >
@@ -2092,6 +2305,19 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </div>
+
+    <button
+      v-show="showScrollToTop"
+      type="button"
+      class="scroll-to-top-btn"
+      :class="{ 'scroll-to-top-btn--with-whatsapp': hasWhatsApp }"
+      :title="t('editor.scrollToTop')"
+      :aria-label="t('editor.scrollToTop')"
+      @click="scrollToPageTop"
+    >
+      <IconArrowUp v-bind="toolbarIcon" aria-hidden="true" />
+      <span>{{ t('editor.scrollToTop') }}</span>
+    </button>
   </div>
 </template>
 
@@ -2142,6 +2368,23 @@ onBeforeUnmount(() => {
 
 .page-zoom-label {
   @apply text-xs font-medium tabular-nums;
+}
+
+.scroll-to-top-btn {
+  @apply fixed z-40 inline-flex items-center gap-1.5 rounded-full border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-md hover:bg-slate-50 transition-colors;
+  bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
+  right: 1rem;
+}
+
+@media (min-width: 640px) {
+  .scroll-to-top-btn {
+    bottom: 1.5rem;
+    right: 1.5rem;
+  }
+
+  .scroll-to-top-btn--with-whatsapp {
+    bottom: 5.5rem;
+  }
 }
 
 .a4-page-scale-host {
@@ -2205,6 +2448,15 @@ onBeforeUnmount(() => {
 :deep(.editor-comment:hover .editor-comment-tooltip),
 :deep(.editor-comment.is-preview .editor-comment-tooltip) {
   @apply block;
+}
+
+:deep(.editor-appendix-info) {
+  @apply block my-2 px-1 py-0.5 rounded cursor-pointer select-none;
+  @apply text-sm font-bold text-sky-900 bg-sky-50 border border-sky-200;
+}
+
+:deep(.editor-appendix-info.is-preview) {
+  @apply ring-2 ring-sky-300;
 }
 
 .a4-page--kapak :deep(.ProseMirror) {

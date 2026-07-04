@@ -60,9 +60,13 @@ onMounted(loadContent);
     <template v-else-if="content">
       <!-- Hero -->
       <section id="hero" class="relative overflow-hidden">
-        <div class="absolute inset-0 bg-gradient-to-br from-indigo-50 via-white to-violet-50" />
-        <div class="absolute -top-24 -right-24 w-96 h-96 bg-indigo-200/30 rounded-full blur-3xl" />
-        <div class="absolute -bottom-32 -left-24 w-80 h-80 bg-violet-200/30 rounded-full blur-3xl" />
+        <img
+          src="/images/hero-background.png"
+          alt=""
+          aria-hidden="true"
+          class="absolute inset-0 w-full h-full object-cover object-center"
+        />
+        <div class="absolute inset-0 bg-gradient-to-b from-white/50 via-white/30 to-white/55" />
 
         <div class="relative max-w-6xl mx-auto px-4 py-20 sm:py-28 text-center">
           <p v-if="content.hero.eyebrow" class="text-sm font-medium text-indigo-600 mb-4 tracking-wide uppercase">

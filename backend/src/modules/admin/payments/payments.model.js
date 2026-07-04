@@ -69,14 +69,17 @@ export const paymentsModel = {
     return rows[0] ?? null;
   },
 
-  async review(id, { status, adminId, adminNotes }) {
+  async review(id, { status, adminId, adminNotes, invoiceNumber, invoicePdfUrl }) {
     const { rows } = await pool.query(
       `UPDATE bank_transfers
        SET status = $1, reviewed_by_admin_id = $2, reviewed_at = NOW(),
-           admin_notes = $3, updated_at = NOW()
+           admin_notes = $3,
+           invoice_number = CASE WHEN $1 = 'approved' THEN $5 ELSE invoice_number END,
+           invoice_pdf_url = CASE WHEN $1 = 'approved' THEN $6 ELSE invoice_pdf_url END,
+           updated_at = NOW()
        WHERE id = $4 AND status = 'pending'
        RETURNING *`,
-      [status, adminId, adminNotes ?? null, id],
+      [status, adminId, adminNotes ?? null, id, invoiceNumber ?? null, invoicePdfUrl ?? null],
     );
     return rows[0] ?? null;
   },

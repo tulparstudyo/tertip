@@ -1,5 +1,6 @@
 import { asyncHandler } from '../../../shared/utils/async-handler.util.js';
 import { sendSuccess, sendError } from '../../../shared/utils/api-response.util.js';
+import { env } from '../../../config/env.js';
 import { bankTransferModel } from './payments.model.js';
 import { paymentsView } from './payments.view.js';
 
@@ -25,16 +26,17 @@ export const paymentsController = {
   }),
 
   create: asyncHandler(async (req, res) => {
-    const { amount, currency, senderName, bankName, transferDate, referenceCode, notes } = req.body;
+    const { senderName, bankName, transferDate, referenceCode, notes } = req.body;
+    const amount = env.paymentAmount;
 
-    if (!amount || Number(amount) <= 0) {
-      return sendError(res, { status: 400, message: req.t('user.payments.missingAmount') });
+    if (!amount || amount <= 0) {
+      return sendError(res, { status: 503, message: req.t('user.payments.amountNotConfigured') });
     }
 
     const payment = await bankTransferModel.create({
       userId: req.user.id,
-      amount: Number(amount),
-      currency,
+      amount,
+      currency: env.paymentCurrency,
       senderName,
       bankName,
       transferDate,
@@ -46,6 +48,25 @@ export const paymentsController = {
       status: 201,
       message: req.t('user.payments.create.success'),
       data: paymentsView.formatPayment(payment),
+    });
+  }),
+
+  downloadInvoice: asyncHandler(async (req, res) => {
+    const paymentId = Number(req.params.paymentId);
+    const payment = await bankTransferModel.findByIdForUser(paymentId, req.user.id);
+
+    if (!payment) {
+      return sendError(res, { status: 404, message: req.t('user.payments.notFound') });
+    }
+    if (payment.status !== 'approved' || !payment.invoice_pdf_url) {
+      return sendError(res, { status: 403, message: req.t('user.payments.invoiceNotAvailable') });
+    }
+
+    sendSuccess(res, {
+      data: {
+        url: payment.invoice_pdf_url,
+        invoiceNumber: payment.invoice_number,
+      },
     });
   }),
 };

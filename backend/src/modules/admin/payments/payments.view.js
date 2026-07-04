@@ -14,6 +14,8 @@ export const paymentsView = {
       notes: row.notes,
       status: row.status,
       adminNotes: row.admin_notes,
+      invoiceNumber: row.invoice_number,
+      invoicePdfUrl: row.invoice_pdf_url,
       reviewedByAdminId: row.reviewed_by_admin_id,
       reviewerName: row.reviewer_name,
       reviewedAt: row.reviewed_at,

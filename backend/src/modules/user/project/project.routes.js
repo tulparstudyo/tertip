@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { userAuthMiddleware } from '../../../shared/middleware/user-auth.middleware.js';
+import { requireEmailVerifiedMiddleware } from '../../../shared/middleware/require-email-verified.middleware.js';
 import { projectController } from './project.controller.js';
 import { commentController } from './comment.controller.js';
 import { shareController } from './share.controller.js';
@@ -9,6 +10,7 @@ import { citationImageUpload } from '../../../shared/middleware/upload.middlewar
 const router = Router();
 
 router.use(userAuthMiddleware);
+router.use(requireEmailVerifiedMiddleware);
 
 router.get('/', projectController.listProjects);
 router.post('/', projectController.createProject);
@@ -20,6 +22,7 @@ router.post('/:projectId/generate-kapak', projectController.generateKapak);
 router.post('/:projectId/generate-oz', projectController.generateOz);
 router.post('/:projectId/generate-abstract', projectController.generateAbstract);
 router.post('/:projectId/generate-kaynakca', projectController.generateKaynakca);
+router.post('/:projectId/generate-ekler', projectController.generateEkler);
 
 router.post(
   '/:projectId/citation-images',

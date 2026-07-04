@@ -16,3 +16,18 @@ export async function fetchLandingContent() {
 
   return data.data?.content ?? null;
 }
+
+export async function fetchSiteConfig() {
+  const response = await fetch(`${API_BASE}/public/site-config`, {
+    headers: {
+      'Accept-Language': i18n.global.locale.value,
+    },
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.message ?? 'Failed to load site config');
+  }
+
+  return data.data ?? null;
+}
