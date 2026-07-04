@@ -175,7 +175,6 @@ onMounted(async () => {
             <th class="text-left p-3 font-medium">{{ t('aiUsage.date') }}</th>
             <th class="text-left p-3 font-medium">{{ t('aiUsage.project') }}</th>
             <th class="text-left p-3 font-medium">{{ t('aiUsage.commandType') }}</th>
-            <th class="text-left p-3 font-medium">{{ t('aiUsage.tokens') }}</th>
             <th class="text-left p-3 font-medium">{{ t('aiUsage.status') }}</th>
             <th class="text-right p-3 font-medium">{{ t('aiUsage.actions') }}</th>
           </tr>
@@ -191,7 +190,6 @@ onMounted(async () => {
               <span v-else>—</span>
             </td>
             <td class="p-3 text-slate-600">{{ commandTypeLabel(item.commandType) }}</td>
-            <td class="p-3 text-slate-600">{{ item.tokensUsed }}</td>
             <td class="p-3">
               <span
                 class="inline-flex px-2 py-0.5 rounded text-xs font-medium"
@@ -207,7 +205,7 @@ onMounted(async () => {
             </td>
           </tr>
           <tr v-if="!items.length">
-            <td colspan="6" class="p-8 text-center text-slate-500">{{ t('aiUsage.empty') }}</td>
+            <td colspan="5" class="p-8 text-center text-slate-500">{{ t('aiUsage.empty') }}</td>
           </tr>
         </tbody>
       </table>
@@ -268,10 +266,6 @@ onMounted(async () => {
           <div class="grid grid-cols-3 gap-2">
             <dt class="text-slate-500">{{ t('aiUsage.commandType') }}</dt>
             <dd class="col-span-2">{{ commandTypeLabel(selectedLog.commandType) }}</dd>
-          </div>
-          <div class="grid grid-cols-3 gap-2">
-            <dt class="text-slate-500">{{ t('aiUsage.tokens') }}</dt>
-            <dd class="col-span-2">{{ selectedLog.tokensUsed }}</dd>
           </div>
           <div class="grid grid-cols-3 gap-2">
             <dt class="text-slate-500">{{ t('aiUsage.status') }}</dt>

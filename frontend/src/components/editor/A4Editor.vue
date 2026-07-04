@@ -15,6 +15,8 @@ import AppendixInfo from './extensions/AppendixInfo.js';
 import ProtectedInlineNodes from './extensions/ProtectedInlineNodes.js';
 import AppendixEntry from './extensions/AppendixEntry.js';
 import BibliographyEntry from './extensions/BibliographyEntry.js';
+import TocEntry from './extensions/TocEntry.js';
+import SectionBreak from './extensions/SectionBreak.js';
 import TextAlign from './extensions/TextAlign.js';
 import { buildAuthorsDisplay } from '@/utils/author-citation.js';
 import {
@@ -38,6 +40,7 @@ import {
   getAppendixInfoInsertPos,
   renumberAppendixInfosInEditor,
 } from '@/utils/appendix-info.js';
+import { fetchAndMeasureProjectPages } from '@/utils/thesis-paginator.js';
 import { centeredKisaltmalarTitle } from '@/utils/kisaltmalar-list.js';
 
 const toolbarIcon = tablerIconProps.toolbar;
@@ -154,11 +157,16 @@ const generateKapakLoading = ref(false);
 const generateOzLoading = ref(false);
 const generateAbstractLoading = ref(false);
 const generateKaynakcaLoading = ref(false);
+const generateSonucLoading = ref(false);
 const generateEklerLoading = ref(false);
+const generateIcindekilerLoading = ref(false);
 const insertStandardAbbreviationsLoading = ref(false);
 const showAppendixModal = ref(false);
 const editingAppendixPos = ref(null);
 const appendixForm = ref({ number: 1, title: '', page: '' });
+const showTocModal = ref(false);
+const editingTocPos = ref(null);
+const tocForm = ref({ title: '', page: '' });
 const showBibliographyModal = ref(false);
 const editingBibliographyPos = ref(null);
 const bibliographyForm = ref({ sourceId: '' });
@@ -193,6 +201,10 @@ const showAppendixInfoMarker = computed(
   () => Boolean(toolbarConfig.value.appendixInfoMarkers) && props.canEdit && props.projectId,
 );
 
+const showSectionBreak = computed(
+  () => Boolean(toolbarConfig.value.sectionBreaks) && props.canEdit,
+);
+
 const showGenerateEkler = computed(
   () => Boolean(toolbarConfig.value.generateEkler) && props.canEdit,
 );
@@ -213,6 +225,14 @@ const showGenerateKaynakca = computed(
   () => Boolean(toolbarConfig.value.generateKaynakca) && props.canEdit,
 );
 
+const showGenerateSonuc = computed(
+  () => Boolean(toolbarConfig.value.generateSonuc) && props.canEdit,
+);
+
+const showGenerateIcindekiler = computed(
+  () => Boolean(toolbarConfig.value.generateIcindekiler) && props.canEdit,
+);
+
 const showCheckFootnotes = computed(
   () => Boolean(toolbarConfig.value.checkFootnotes) && props.canEdit,
 );
@@ -224,6 +244,7 @@ const showImageCitations = computed(
 const isEklerSection = computed(() => props.section === 'ekler');
 const isKaynakcaSection = computed(() => props.section === 'kaynakca');
 const isKisaltmalarSection = computed(() => props.section === 'kisaltmalar');
+const isIcindekilerSection = computed(() => props.section === 'icindekiler');
 
 let debounceTimer = null;
 let skipSave = true;
@@ -245,6 +266,20 @@ function centeredEklerTitle() {
       {
         type: 'text',
         text: 'EKLER',
+        marks: [{ type: 'bold' }],
+      },
+    ],
+  };
+}
+
+function centeredIcindekilerTitle() {
+  return {
+    type: 'heading',
+    attrs: { level: 2, textAlign: 'center' },
+    content: [
+      {
+        type: 'text',
+        text: 'İÇİNDEKİLER',
         marks: [{ type: 'bold' }],
       },
     ],
@@ -299,7 +334,11 @@ function buildDefaultContent() {
     },
     icindekiler: {
       type: 'doc',
-      content: [defaultHeading(2, t('editor.sections.icindekiler')), { type: 'paragraph' }],
+      content: [centeredIcindekilerTitle()],
+    },
+    sonuc: {
+      type: 'doc',
+      content: [defaultHeading(1, t('editor.sections.sonuc')), { type: 'paragraph' }],
     },
     body: {
       type: 'doc',
@@ -435,6 +474,25 @@ async function generateKaynakca() {
   }
 }
 
+async function generateSonuc() {
+  if (!props.projectId || !showGenerateSonuc.value) return;
+
+  generateSonucLoading.value = true;
+  try {
+    const res = await api(`/user/projects/${props.projectId}/generate-sonuc`, {
+      method: 'POST',
+    });
+    skipSave = true;
+    editor.value?.commands.setContent(res.data?.content ?? buildDefaultContent());
+    skipSave = false;
+    saveCycleActive = false;
+  } catch {
+    // Error toast is already shown by api().
+  } finally {
+    generateSonucLoading.value = false;
+  }
+}
+
 async function generateEkler() {
   if (!props.projectId || !showGenerateEkler.value) return;
 
@@ -451,6 +509,28 @@ async function generateEkler() {
     // Error toast is already shown by api().
   } finally {
     generateEklerLoading.value = false;
+  }
+}
+
+async function generateIcindekiler() {
+  if (!props.projectId || !showGenerateIcindekiler.value) return;
+
+  generateIcindekilerLoading.value = true;
+  try {
+    await flushPendingSave();
+    const pageMap = await fetchAndMeasureProjectPages(props.projectId, api);
+    const res = await api(`/user/projects/${props.projectId}/generate-icindekiler`, {
+      method: 'POST',
+      body: { pageMap },
+    });
+    skipSave = true;
+    editor.value?.commands.setContent(res.data?.content ?? buildDefaultContent());
+    skipSave = false;
+    saveCycleActive = false;
+  } catch {
+    // Error toast is already shown by api().
+  } finally {
+    generateIcindekilerLoading.value = false;
   }
 }
 
@@ -539,7 +619,27 @@ function buildEditorExtensions() {
     );
   }
 
-  if (props.section === 'kapak' || props.section === 'ekler' || props.section === 'kaynakca' || props.section === 'kisaltmalar') {
+  if (props.section === 'icindekiler') {
+    extensions.push(
+      TocEntry.configure({
+        onDoubleClick({ pos, attrs }) {
+          if (!props.canEdit) return;
+          if (attrs.variant === 'chapter') return;
+          openTocEditModal(pos, attrs);
+        },
+      }),
+    );
+  }
+
+  if (toolbarConfig.value.sectionBreaks) {
+    extensions.push(
+      SectionBreak.configure({
+        label: t('editor.sectionBreakLabel'),
+      }),
+    );
+  }
+
+  if (props.section === 'kapak' || props.section === 'ekler' || props.section === 'kaynakca' || props.section === 'kisaltmalar' || props.section === 'icindekiler') {
     extensions.push(TextAlign);
   }
 
@@ -638,6 +738,41 @@ function deleteAppendixEntry() {
     .deleteSelection()
     .run();
   closeAppendixModal();
+}
+
+function openTocEditModal(pos, attrs) {
+  editingTocPos.value = pos;
+  tocForm.value = {
+    title: attrs.title ?? '',
+    page: attrs.page ?? '',
+  };
+  showTocModal.value = true;
+}
+
+function closeTocModal() {
+  editingTocPos.value = null;
+  showTocModal.value = false;
+}
+
+function saveTocEntry() {
+  if (editingTocPos.value === null || !String(tocForm.value.page).trim()) return;
+
+  const currentNode = editor.value?.state.doc.nodeAt(editingTocPos.value);
+  if (!currentNode || currentNode.type.name !== 'tocEntry') return;
+
+  const attrs = {
+    ...currentNode.attrs,
+    page: String(tocForm.value.page).trim(),
+  };
+
+  editor.value
+    ?.chain()
+    .focus()
+    .setNodeSelection(editingTocPos.value)
+    .updateAttributes('tocEntry', attrs)
+    .run();
+
+  closeTocModal();
 }
 
 const appendixModalTitle = computed(() =>
@@ -1240,6 +1375,11 @@ function toggleHeading(level) {
   runCommand(() => editor.value?.chain().focus().toggleHeading({ level }));
 }
 
+function insertSectionBreak() {
+  if (!editor.value || !showSectionBreak.value) return;
+  editor.value.chain().focus().insertSectionBreak().run();
+}
+
 function toggleQuote() {
   runCommand(() => editor.value?.chain().focus().toggleBlockquote());
 }
@@ -1638,6 +1778,7 @@ onBeforeUnmount(() => {
             toolbarConfig.bold
             || toolbarConfig.italic
             || toolbarConfig.headings?.length
+            || toolbarConfig.sectionBreaks
             || toolbarConfig.bulletList
             || toolbarConfig.orderedList
             || toolbarConfig.blockquote
@@ -1674,6 +1815,15 @@ onBeforeUnmount(() => {
             @click="toggleHeading(level)"
           >
             H{{ level }}
+          </button>
+          <button
+            v-if="showSectionBreak"
+            type="button"
+            class="toolbar-btn toolbar-btn--label"
+            :title="t('editor.insertSectionBreakHint')"
+            @click="insertSectionBreak"
+          >
+            {{ t('editor.insertSectionBreak') }}
           </button>
           <button
             v-if="toolbarConfig.bulletList"
@@ -1808,6 +1958,21 @@ onBeforeUnmount(() => {
         </div>
 
         <div
+          v-if="showGenerateIcindekiler"
+          class="toolbar-group"
+        >
+          <button
+            type="button"
+            class="toolbar-btn toolbar-btn--label toolbar-btn--success"
+            :disabled="generateIcindekilerLoading"
+            :title="t('editor.generateIcindekilerHint')"
+            @click="generateIcindekiler"
+          >
+            {{ generateIcindekilerLoading ? t('common.loading') : t('editor.generateIcindekiler') }}
+          </button>
+        </div>
+
+        <div
           v-if="toolbarConfig.bibliographyEntries || showGenerateKaynakca"
           class="toolbar-group"
         >
@@ -1829,6 +1994,21 @@ onBeforeUnmount(() => {
             @click="generateKaynakca"
           >
             {{ generateKaynakcaLoading ? t('common.loading') : t('editor.generateKaynakca') }}
+          </button>
+        </div>
+
+        <div
+          v-if="showGenerateSonuc"
+          class="toolbar-group"
+        >
+          <button
+            type="button"
+            class="toolbar-btn toolbar-btn--label toolbar-btn--success"
+            :disabled="generateSonucLoading"
+            :title="t('editor.generateSonucHint')"
+            @click="generateSonuc"
+          >
+            {{ generateSonucLoading ? t('common.loading') : t('editor.generateSonuc') }}
           </button>
         </div>
 
@@ -1945,6 +2125,7 @@ onBeforeUnmount(() => {
               'a4-page--ekler': isEklerSection,
               'a4-page--kaynakca': isKaynakcaSection,
               'a4-page--kisaltmalar': isKisaltmalarSection,
+              'a4-page--icindekiler': isIcindekilerSection,
             }"
           >
             <div class="a4-page-content">
@@ -2003,6 +2184,40 @@ onBeforeUnmount(() => {
             class="px-4 py-2 bg-indigo-600 text-white rounded-lg"
             :disabled="!appendixForm.title.trim() || !String(appendixForm.page).trim()"
             @click="saveAppendixEntry"
+          >
+            {{ t('common.save') }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div
+      v-if="showTocModal"
+      class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
+      @click.self="closeTocModal"
+    >
+      <div class="bg-white rounded-xl p-6 w-full max-w-lg space-y-3">
+        <h3 class="font-semibold">{{ t('editor.editTocEntry') }}</h3>
+        <p class="text-sm text-slate-600">{{ tocForm.title }}</p>
+        <div>
+          <label class="block text-sm text-slate-600 mb-1">{{ t('editor.appendixPage') }}</label>
+          <input
+            v-model="tocForm.page"
+            type="text"
+            inputmode="numeric"
+            class="w-full border rounded-lg px-3 py-2"
+            :placeholder="t('editor.pageNumber')"
+          />
+        </div>
+        <div class="flex gap-2 justify-end">
+          <button type="button" class="px-4 py-2 border rounded-lg" @click="closeTocModal">
+            {{ t('common.cancel') }}
+          </button>
+          <button
+            type="button"
+            class="px-4 py-2 bg-indigo-600 text-white rounded-lg"
+            :disabled="!String(tocForm.page).trim()"
+            @click="saveTocEntry"
           >
             {{ t('common.save') }}
           </button>
@@ -2599,6 +2814,111 @@ onBeforeUnmount(() => {
 
 .a4-page--kisaltmalar :deep(.kisaltmalar-table p) {
   margin: 0;
+}
+
+.a4-page--icindekiler :deep(.ProseMirror h2) {
+  text-align: center;
+  font-size: 14pt;
+  font-weight: 700;
+  margin: 0 0 1.5rem;
+  text-transform: uppercase;
+}
+
+.a4-page--icindekiler :deep(.toc-entry--chapter) {
+  text-align: center;
+  margin: 1.25rem 0 0.75rem;
+  font-family: 'Times New Roman', Times, serif;
+}
+
+.a4-page--icindekiler :deep(.toc-chapter-label),
+.a4-page--icindekiler :deep(.toc-chapter-title) {
+  font-size: 12pt;
+  font-weight: 700;
+  line-height: 1.5;
+  text-transform: uppercase;
+}
+
+.a4-page--icindekiler :deep(.toc-entry--item) {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: baseline;
+  width: 100%;
+  margin-bottom: 8pt;
+  line-height: 1.5;
+  font-size: 12pt;
+  font-family: 'Times New Roman', Times, serif;
+}
+
+.a4-page--icindekiler :deep(.toc-entry--intro) {
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.a4-page--icindekiler :deep(.toc-entry--level-3) {
+  padding-left: 2.5em;
+}
+
+.a4-page--icindekiler :deep(.toc-heading-text) {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.a4-page--icindekiler :deep(.toc-label) {
+  white-space: pre;
+}
+
+.a4-page--icindekiler :deep(.toc-title) {
+  white-space: normal;
+  word-break: break-word;
+}
+
+.a4-page--icindekiler :deep(.toc-leader) {
+  flex: 1 1 auto;
+  min-width: 1.5em;
+  margin: 0 0.25em;
+  border-bottom: 1px dotted currentColor;
+  height: 0;
+  align-self: baseline;
+  position: relative;
+  top: -0.12em;
+}
+
+.a4-page--icindekiler :deep(.toc-page) {
+  flex: 0 0 auto;
+  font-weight: 700;
+  text-align: right;
+  min-width: 1.75em;
+  padding-left: 0.15em;
+}
+
+.a4-page :deep(.editor-section-break) {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 1.25rem 0;
+  user-select: none;
+}
+
+.a4-page :deep(.editor-section-break__line) {
+  flex: 1;
+  border-top: 2px solid #94a3b8;
+  height: 0;
+}
+
+.a4-page :deep(.editor-section-break__label) {
+  font-family: inherit;
+  font-size: 10pt;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+.a4-page :deep(.ProseMirror-selectednode .editor-section-break) {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+  border-radius: 2px;
 }
 </style>
 

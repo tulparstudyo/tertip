@@ -198,7 +198,7 @@ export const libraryController = {
     sendSuccess(res, {
       data: {
         gatewayToken,
-        streamUrl: `/api/v1/user/library/stream/${gatewayToken}`,
+        streamUrl: `/user/library/stream/${gatewayToken}`,
         expiresIn: 1800,
       },
     });

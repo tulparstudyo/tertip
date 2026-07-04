@@ -56,50 +56,50 @@ onMounted(() => {
         to="/app/projects"
         class="bg-white rounded-xl p-6 shadow-page hover:shadow-lg transition-shadow border border-slate-100"
       >
-        <h2 class="font-semibold text-indigo-700 mb-1 flex items-center gap-2">
+        <h3 class="font-semibold text-indigo-700 mb-1 flex items-center gap-2">
           <IconFileText v-bind="cardIcon" aria-hidden="true" />
           {{ t('nav.projects') }}
-        </h2>
+        </h3>
         <p class="text-sm text-slate-500">{{ t('projects.title') }}</p>
       </RouterLink>
       <RouterLink
         to="/app/library"
         class="bg-white rounded-xl p-6 shadow-page hover:shadow-lg transition-shadow border border-slate-100"
       >
-        <h2 class="font-semibold text-indigo-700 mb-1 flex items-center gap-2">
+        <h3 class="font-semibold text-indigo-700 mb-1 flex items-center gap-2">
           <IconBook v-bind="cardIcon" aria-hidden="true" />
           {{ t('nav.library') }}
-        </h2>
+        </h3>
         <p class="text-sm text-slate-500">{{ t('library.title') }}</p>
       </RouterLink>
       <RouterLink
         to="/app/ai-usage"
         class="bg-white rounded-xl p-6 shadow-page hover:shadow-lg transition-shadow border border-slate-100"
       >
-        <h2 class="font-semibold text-indigo-700 mb-1 flex items-center gap-2">
+        <h3 class="font-semibold text-indigo-700 mb-1 flex items-center gap-2">
           <IconSparkles v-bind="cardIcon" aria-hidden="true" />
           {{ t('nav.aiUsage') }}
-        </h2>
+        </h3>
         <p class="text-sm text-slate-500">{{ t('aiUsage.subtitle') }}</p>
       </RouterLink>
       <RouterLink
         to="/app/payments"
         class="bg-white rounded-xl p-6 shadow-page hover:shadow-lg transition-shadow border border-slate-100"
       >
-        <h2 class="font-semibold text-indigo-700 mb-1 flex items-center gap-2">
+        <h3 class="font-semibold text-indigo-700 mb-1 flex items-center gap-2">
           <IconReceipt v-bind="cardIcon" aria-hidden="true" />
           {{ t('nav.payments') }}
-        </h2>
+        </h3>
         <p class="text-sm text-slate-500">{{ t('payments.subtitle') }}</p>
       </RouterLink>
       <RouterLink
         to="/app/settings/google"
         class="bg-white rounded-xl p-6 shadow-page hover:shadow-lg transition-shadow border border-slate-100"
       >
-        <h2 class="font-semibold text-indigo-700 mb-1 flex items-center gap-2">
+        <h3 class="font-semibold text-indigo-700 mb-1 flex items-center gap-2">
           <IconSettings v-bind="cardIcon" aria-hidden="true" />
           {{ t('nav.settings') }}
-        </h2>
+        </h3>
         <p class="text-sm text-slate-500">{{ t('settings.google.title') }}</p>
       </RouterLink>
     </div>

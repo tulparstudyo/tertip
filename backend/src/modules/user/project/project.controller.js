@@ -12,7 +12,7 @@ import {
   resolveProjectSectionColumn,
   resolveSectionContent,
 } from '../../../shared/constants/project-sections.constants.js';
-import { buildDefaultSectionDoc, buildThesisKapakDoc, buildOzDocFromParagraphs, buildAbstractDocFromParagraphs, parseGeneratedParagraphs, prepareOzSourceText } from '../../../shared/constants/project-section-defaults.js';
+import { buildDefaultSectionDoc, buildThesisKapakDoc, buildOzDocFromParagraphs, buildAbstractDocFromParagraphs, buildSonucDocFromBlocks, parseGeneratedParagraphs, parseGeneratedSonucBlocks, countSonucParagraphs, prepareOzSourceText } from '../../../shared/constants/project-section-defaults.js';
 import { localeInstruction } from '../../../shared/services/gemini.service.js';
 import { executeAiCommand } from '../../../shared/services/ai-execution.service.js';
 import { AI_COMMAND_TYPES } from '../../../shared/constants/ai-command-types.constants.js';
@@ -40,6 +40,10 @@ import {
   collectAppendixInfosFromDoc,
   buildEklerDocFromAppendixInfos,
 } from '../../../shared/utils/appendix-info.util.js';
+import {
+  collectHeadingsFromDoc,
+  buildIcindekilerDocFromHeadings,
+} from '../../../shared/utils/icindekiler.util.js';
 import { libraryModel } from '../library/library.model.js';
 import { libraryView } from '../library/library.view.js';
 import { commentModel } from './comment.model.js';
@@ -388,6 +392,94 @@ export const projectController = {
     }
   }),
 
+  generateSonuc: asyncHandler(async (req, res) => {
+    const projectId = Number(req.params.projectId);
+    const access = await projectModel.findAccessibleProject(projectId, req.user.id);
+
+    if (!access) {
+      return sendError(res, {
+        status: 404,
+        message: req.t('user.project.get.notFound'),
+      });
+    }
+
+    if (!access.isOwner) {
+      return sendError(res, {
+        status: 403,
+        message: req.t('user.project.content.readOnly'),
+      });
+    }
+
+    const bodyContent = projectModel.getSectionContent(access.project, 'body');
+    const { text: bodyText, truncated } = prepareOzSourceText(
+      tiptapJsonToPlainText(bodyContent ?? { type: 'doc', content: [] }),
+    );
+
+    if (!bodyText) {
+      return sendError(res, {
+        status: 400,
+        message: req.t('user.project.sonuc.emptyBody'),
+      });
+    }
+
+    const locale = req.locale ?? 'tr';
+    const projectType = access.project.project_type ?? 'article';
+    const systemInstruction = [
+      `You are an elite academic editor specializing in Turkish thesis and research writing.`,
+      `Write the conclusion (sonuç) section of a ${projectType} based only on the main text provided.`,
+      localeInstruction(locale),
+      truncated ? 'The source text is truncated; base your conclusion only on the available content.' : '',
+      'Content rules:',
+      '1. Directly answer the main research question or hypothesis stated in the introduction/main text.',
+      '2. Synthesize key findings at a high level; do not copy tables, statistics, or raw data verbatim.',
+      '3. Emphasize the study\'s contribution to the field (theoretical/practical value).',
+      '4. Acknowledge limitations honestly (sample size, time, method, budget, etc.).',
+      '5. Offer concrete recommendations for future research or practice.',
+      'Structural rules:',
+      '- Do not introduce new findings, arguments, or citations not present in the source.',
+      '- Use past tense (-miştir/-mıştır) or simple present tense appropriate for Turkish academic writing.',
+      '- Be concise and impactful; target roughly 800–1500 words (about 3–5 A4 pages).',
+      '- Follow this flow: brief reminder of the research question → synthesis of main findings → contribution → limitations → recommendations.',
+      'Output format:',
+      '- Do not add the main "Sonuç" heading (it is added separately).',
+      '- Write body paragraphs separated by a single blank line.',
+      '- You may use "## Sınırlılıklar" and/or "## Öneriler" as optional level-2 subheadings when helpful.',
+      '- No markdown except ## subheadings, no bullet lists, no meta commentary.',
+    ]
+      .filter(Boolean)
+      .join(' ');
+
+    try {
+      const { text } = await executeAiCommand({
+        userId: req.user.id,
+        projectId,
+        commandType: AI_COMMAND_TYPES.GENERATE_SONUC,
+        systemInstruction,
+        parts: [{ text: bodyText }],
+      });
+
+      const blocks = parseGeneratedSonucBlocks(text);
+      if (countSonucParagraphs(blocks) < 3) {
+        return sendError(res, {
+          status: 502,
+          message: req.t('user.project.sonuc.generationFailed'),
+        });
+      }
+
+      const sonucDoc = buildSonucDocFromBlocks(blocks);
+      await projectModel.saveSectionContent(projectId, req.user.id, 'sonuc', sonucDoc);
+
+      sendSuccess(res, {
+        message: req.t('user.project.sonuc.generated'),
+        data: { content: sonucDoc },
+      });
+    } catch (err) {
+      if (handleAiError(err, req, res)) return;
+      console.error('generateSonuc failed:', err);
+      throw err;
+    }
+  }),
+
   generateKaynakca: asyncHandler(async (req, res) => {
     const projectId = Number(req.params.projectId);
     const access = await projectModel.findAccessibleProject(projectId, req.user.id);
@@ -487,6 +579,44 @@ export const projectController = {
     sendSuccess(res, {
       message: req.t('user.project.ekler.generated'),
       data: { content: eklerDoc },
+    });
+  }),
+
+  generateIcindekiler: asyncHandler(async (req, res) => {
+    const projectId = Number(req.params.projectId);
+    const access = await projectModel.findAccessibleProject(projectId, req.user.id);
+
+    if (!access) {
+      return sendError(res, {
+        status: 404,
+        message: req.t('user.project.get.notFound'),
+      });
+    }
+
+    if (!access.isOwner) {
+      return sendError(res, {
+        status: 403,
+        message: req.t('user.project.content.readOnly'),
+      });
+    }
+
+    const bodyDoc = projectModel.getSectionContent(access.project, 'body');
+    const headings = collectHeadingsFromDoc(bodyDoc);
+
+    if (!headings.length) {
+      return sendError(res, {
+        status: 400,
+        message: req.t('user.project.icindekiler.emptyHeadings'),
+      });
+    }
+
+    const pageMap = req.body?.pageMap ?? null;
+    const icindekilerDoc = buildIcindekilerDocFromHeadings(headings, pageMap);
+    await projectModel.saveSectionContent(projectId, req.user.id, 'icindekiler', icindekilerDoc);
+
+    sendSuccess(res, {
+      message: req.t('user.project.icindekiler.generated'),
+      data: { content: icindekilerDoc },
     });
   }),
 

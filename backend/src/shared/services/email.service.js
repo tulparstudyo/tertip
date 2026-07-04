@@ -1,32 +1,52 @@
 import nodemailer from 'nodemailer';
+import {
+  getSmtpConfig,
+  getPasswordResetExpiresHours,
+} from './app-settings.service.js';
 import { env } from '../../config/env.js';
 
 let transporter = null;
+let transporterKey = null;
+
+function getTransporterKey(smtp) {
+  return [smtp.host, smtp.port, smtp.secure, smtp.user, smtp.pass, smtp.from].join('|');
+}
 
 function getTransporter() {
-  if (!env.smtp.host) return null;
-  if (!transporter) {
+  const smtp = getSmtpConfig();
+  if (!smtp.host) return null;
+
+  const key = getTransporterKey(smtp);
+  if (!transporter || transporterKey !== key) {
     transporter = nodemailer.createTransport({
-      host: env.smtp.host,
-      port: env.smtp.port,
-      secure: env.smtp.secure,
-      auth: env.smtp.user
-        ? { user: env.smtp.user, pass: env.smtp.pass }
+      host: smtp.host,
+      port: smtp.port,
+      secure: smtp.secure,
+      auth: smtp.user
+        ? { user: smtp.user, pass: smtp.pass }
         : undefined,
     });
+    transporterKey = key;
   }
   return transporter;
 }
 
+export function resetEmailTransporter() {
+  transporter = null;
+  transporterKey = null;
+}
+
 export async function sendPasswordResetEmail({ to, resetUrl, locale = 'tr' }) {
+  const smtp = getSmtpConfig();
+  const expiresHours = getPasswordResetExpiresHours();
   const isTr = locale === 'tr';
   const subject = isTr ? 'Tertip — Şifre sıfırlama' : 'Tertip — Password reset';
   const text = isTr
-    ? `Şifrenizi sıfırlamak için aşağıdaki bağlantıya tıklayın:\n\n${resetUrl}\n\nBu bağlantı ${env.passwordResetExpiresHours} saat geçerlidir. Bu isteği siz yapmadıysanız bu e-postayı yok sayabilirsiniz.`
-    : `Click the link below to reset your password:\n\n${resetUrl}\n\nThis link expires in ${env.passwordResetExpiresHours} hour(s). If you did not request this, you can ignore this email.`;
+    ? `Şifrenizi sıfırlamak için aşağıdaki bağlantıya tıklayın:\n\n${resetUrl}\n\nBu bağlantı ${expiresHours} saat geçerlidir. Bu isteği siz yapmadıysanız bu e-postayı yok sayabilirsiniz.`
+    : `Click the link below to reset your password:\n\n${resetUrl}\n\nThis link expires in ${expiresHours} hour(s). If you did not request this, you can ignore this email.`;
   const html = isTr
-    ? `<p>Şifrenizi sıfırlamak için aşağıdaki bağlantıya tıklayın:</p><p><a href="${resetUrl}">${resetUrl}</a></p><p>Bu bağlantı ${env.passwordResetExpiresHours} saat geçerlidir.</p>`
-    : `<p>Click the link below to reset your password:</p><p><a href="${resetUrl}">${resetUrl}</a></p><p>This link expires in ${env.passwordResetExpiresHours} hour(s).</p>`;
+    ? `<p>Şifrenizi sıfırlamak için aşağıdaki bağlantıya tıklayın:</p><p><a href="${resetUrl}">${resetUrl}</a></p><p>Bu bağlantı ${expiresHours} saat geçerlidir.</p>`
+    : `<p>Click the link below to reset your password:</p><p><a href="${resetUrl}">${resetUrl}</a></p><p>This link expires in ${expiresHours} hour(s).</p>`;
 
   const transport = getTransporter();
   if (!transport) {
@@ -35,7 +55,7 @@ export async function sendPasswordResetEmail({ to, resetUrl, locale = 'tr' }) {
   }
 
   await transport.sendMail({
-    from: env.smtp.from || env.smtp.user,
+    from: smtp.from || smtp.user,
     to,
     subject,
     text,
@@ -44,8 +64,9 @@ export async function sendPasswordResetEmail({ to, resetUrl, locale = 'tr' }) {
 }
 
 export async function sendEmailVerificationEmail({ to, verifyUrl, locale = 'tr' }) {
-  const isTr = locale === 'tr';
+  const smtp = getSmtpConfig();
   const hours = env.emailVerificationExpiresHours;
+  const isTr = locale === 'tr';
   const subject = isTr ? 'Tertip — E-posta doğrulama' : 'Tertip — Email verification';
   const text = isTr
     ? `Hesabınızı doğrulamak için aşağıdaki bağlantıya tıklayın:\n\n${verifyUrl}\n\nBu bağlantı ${hours} saat geçerlidir.`
@@ -61,7 +82,7 @@ export async function sendEmailVerificationEmail({ to, verifyUrl, locale = 'tr' 
   }
 
   await transport.sendMail({
-    from: env.smtp.from || env.smtp.user,
+    from: smtp.from || smtp.user,
     to,
     subject,
     text,

@@ -21,8 +21,10 @@ router.post('/:projectId/sync-google-doc', projectController.syncGoogleDoc);
 router.post('/:projectId/generate-kapak', projectController.generateKapak);
 router.post('/:projectId/generate-oz', projectController.generateOz);
 router.post('/:projectId/generate-abstract', projectController.generateAbstract);
+router.post('/:projectId/generate-sonuc', projectController.generateSonuc);
 router.post('/:projectId/generate-kaynakca', projectController.generateKaynakca);
 router.post('/:projectId/generate-ekler', projectController.generateEkler);
+router.post('/:projectId/generate-icindekiler', projectController.generateIcindekiler);
 
 router.post(
   '/:projectId/citation-images',

@@ -95,6 +95,18 @@ const router = createRouter({
           meta: { titleKey: 'admin.nav.landing' },
         },
         {
+          path: 'settings',
+          name: 'admin-settings',
+          component: () => import('@/views/admin/AdminSettingsView.vue'),
+          meta: { titleKey: 'admin.nav.settings' },
+        },
+        {
+          path: 'theme-settings',
+          name: 'admin-theme-settings',
+          component: () => import('@/views/admin/AdminThemeSettingsView.vue'),
+          meta: { titleKey: 'admin.nav.themeSettings' },
+        },
+        {
           path: 'ai-logs',
           name: 'admin-ai-logs',
           component: () => import('@/views/admin/AdminAiLogsView.vue'),

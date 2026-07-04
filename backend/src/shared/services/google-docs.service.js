@@ -27,6 +27,15 @@ function isHeadingNamedStyle(namedStyleType) {
   return namedStyleType !== 'NORMAL_TEXT';
 }
 
+/** H1–H3: Google Docs named style bold override (editör ile uyumlu). */
+function isThesisHeadingStyle(namedStyleType) {
+  return (
+    namedStyleType === 'HEADING_1'
+    || namedStyleType === 'HEADING_2'
+    || namedStyleType === 'HEADING_3'
+  );
+}
+
 function thesisFontSizePt(namedStyleType) {
   return isHeadingNamedStyle(namedStyleType)
     ? THESIS_HEADING_FONT_SIZE_PT
@@ -50,9 +59,27 @@ const THESIS_PAGE_SIZE = {
 const THESIS_MARGIN_PT = 71;
 const THESIS_CONTENT_WIDTH_PT = 595.28 - 2 * THESIS_MARGIN_PT;
 
-/** Ekler satırı: içerik genişliğine göre nokta sayısı (~12pt TNR). */
+/** Ekler / içindekiler: 12pt TNR ortalama karakter genişliği (pt). */
 const APPENDIX_CHAR_WIDTH_PT = 6;
-const APPENDIX_LINE_CHAR_TARGET = Math.floor(THESIS_CONTENT_WIDTH_PT / APPENDIX_CHAR_WIDTH_PT) - 2;
+const BOLD_CHAR_WIDTH_PT = 6.5;
+const TOC_DOT_WIDTH_PT = 3;
+const TOC_LEADER_GAP_PT = 4;
+
+/** Satır sonuna kadar nokta lideri (tab + dot leader simülasyonu). */
+function estimateTextWidthPt(text, { bold = false } = {}) {
+  return String(text ?? '').length * (bold ? BOLD_CHAR_WIDTH_PT : APPENDIX_CHAR_WIDTH_PT);
+}
+
+function buildDotLeaderToMargin(beforePageText, pageStr, { indentStartPt = 0, boldBefore = false } = {}) {
+  const contentWidth = THESIS_CONTENT_WIDTH_PT - indentStartPt;
+  const usedWidth =
+    estimateTextWidthPt(beforePageText, { bold: boldBefore })
+    + estimateTextWidthPt(pageStr, { bold: true })
+    + TOC_LEADER_GAP_PT;
+  const leaderPt = contentWidth - usedWidth;
+  const dotCount = Math.max(3, Math.floor(leaderPt / TOC_DOT_WIDTH_PT));
+  return '.'.repeat(dotCount);
+}
 
 const EKLER_HEADING_LABELS = new Set(['ekler', 'ekler listesi']);
 
@@ -166,6 +193,20 @@ function flattenBlockNode(node) {
     ];
   }
 
+  if (node.type === 'tocEntry') {
+    return [
+      {
+        type: 'tocEntry',
+        variant: node.attrs?.variant ?? 'item',
+        chapterLabel: node.attrs?.chapterLabel ?? '',
+        number: node.attrs?.number ?? '',
+        title: node.attrs?.title ?? '',
+        page: String(node.attrs?.page ?? ''),
+        level: Number(node.attrs?.level) || 1,
+      },
+    ];
+  }
+
   if (node.type === 'appendixInfo') {
     const number = node.attrs?.number ?? 1;
     const title = node.attrs?.title ?? '';
@@ -175,6 +216,10 @@ function flattenBlockNode(node) {
         runs: [{ text: `EK-${number}: ${title}`, bold: true }],
       },
     ];
+  }
+
+  if (node.type === 'sectionBreak') {
+    return [{ type: 'pageBreak' }];
   }
 
   if (node.type === 'bibliographyEntry') {
@@ -205,6 +250,12 @@ export function tiptapJsonToPlainText(doc) {
       if (block.type === 'appendixEntry') {
         return [`Ek-${block.number} ${block.title} ${block.page}`];
       }
+      if (block.type === 'tocEntry') {
+        if (block.variant === 'chapter') {
+          return [`${block.chapterLabel} ${block.title}`];
+        }
+        return [`${block.number} ${block.title} ${block.page}`];
+      }
       if (block.type === 'bibliographyEntry') {
         const detail = (block.detailRuns ?? []).map((run) => run.text ?? '').join('');
         return [`${block.authorLabel}: ${detail}`];
@@ -221,6 +272,7 @@ function sectionHasContent(doc) {
   if (serialized.includes('"academicFootnote"')) return true;
   if (serialized.includes('"appendixEntry"')) return true;
   if (serialized.includes('"bibliographyEntry"')) return true;
+  if (serialized.includes('"sectionBreak"')) return true;
   if (serialized.includes('"appendixInfo"')) return true;
   if (serialized.includes('"editorComment"')) return true;
   return tiptapJsonToPlainText(doc).trim().length > 0;
@@ -235,6 +287,7 @@ const SECTION_LEADING_HEADINGS = {
   kisaltmalar: ['kısaltmalar', 'kısaltmalar listesi'],
   icindekiler: ['içindekiler', 'icindekiler'],
   body: ['ana metin'],
+  sonuc: ['sonuç', 'sonuc', 'sonuç ve öneriler'],
   kaynakca: ['kaynakça', 'kaynakca'],
 };
 
@@ -325,8 +378,8 @@ function prepareSectionBlocks(sectionKey, sectionLabel, doc) {
 
   const result = [];
 
-  // Kapak / Ekler: içerik kendi başlığını taşır; üstüne ayrıca bölüm başlığı ekleme
-  if (sectionKey !== 'kapak' && sectionKey !== 'ekler') {
+  // Kapak / Ekler / Ana Metin: içerik kendi başlığını taşır; üstüne ayrıca bölüm başlığı ekleme
+  if (sectionKey !== 'kapak' && sectionKey !== 'ekler' && sectionKey !== 'body') {
     result.push({
       type: 'heading',
       level: 1,
@@ -485,6 +538,7 @@ class DocumentBuilder {
     textAlign = null,
     spaceBelow = false,
     appendixEntry = false,
+    indentStartPt = 0,
   }) {
     this.insertText('\n');
     this.paragraphStyles.push({
@@ -497,6 +551,7 @@ class DocumentBuilder {
       textAlign,
       spaceBelow,
       appendixEntry,
+      indentStartPt,
     });
   }
 
@@ -513,17 +568,17 @@ class DocumentBuilder {
 
     this.insertText(titleStr);
 
-    const dotCount = Math.max(
-      3,
-      APPENDIX_LINE_CHAR_TARGET - prefix.length - titleStr.length - pageStr.length,
-    );
+    const beforePage = `${prefix}${titleStr}`;
+    const dotLeader = pageStr
+      ? buildDotLeaderToMargin(beforePage, pageStr)
+      : buildDotLeaderToMargin(beforePage, '', { indentStartPt: 0 });
     if (pageStr) {
-      this.insertText('.'.repeat(dotCount));
+      this.insertText(dotLeader);
       const pageStart = this.index;
       this.insertText(pageStr);
       this.textStyles.push({ start: pageStart, end: this.index, bold: true });
-    } else if (dotCount > 0) {
-      this.insertText('.'.repeat(dotCount));
+    } else if (dotLeader) {
+      this.insertText(dotLeader);
     }
 
     this.finishParagraph({
@@ -531,6 +586,65 @@ class DocumentBuilder {
       namedStyleType: 'NORMAL_TEXT',
       spaceBelow: true,
       appendixEntry: true,
+    });
+  }
+
+  finishTocEntry({ variant, chapterLabel, number, title, page, level }) {
+    if (variant === 'chapter') {
+      const labelStart = this.index;
+      this.insertText(chapterLabel ?? '');
+      this.textStyles.push({ start: labelStart, end: this.index, bold: true });
+      this.finishParagraph({
+        paragraphStart: labelStart,
+        namedStyleType: 'NORMAL_TEXT',
+        textAlign: 'center',
+        spaceBelow: false,
+      });
+
+      const titleStart = this.index;
+      this.insertText(title ?? '');
+      this.textStyles.push({ start: titleStart, end: this.index, bold: true });
+      this.finishParagraph({
+        paragraphStart: titleStart,
+        namedStyleType: 'NORMAL_TEXT',
+        textAlign: 'center',
+        spaceBelow: true,
+      });
+      return;
+    }
+
+    const paragraphStart = this.index;
+    const pageStr = String(page ?? '');
+    const titleStr = title ?? '';
+    const prefix = variant === 'intro' ? '' : `${number} `;
+    const indentPt = level >= 3 ? 28 : 0;
+    const beforePage = variant === 'intro' ? titleStr : `${prefix}${titleStr}`;
+
+    if (variant === 'intro') {
+      const introStart = this.index;
+      this.insertText(titleStr);
+      this.textStyles.push({ start: introStart, end: this.index, bold: true });
+    } else {
+      this.insertText(prefix);
+      this.insertText(titleStr);
+    }
+
+    if (pageStr) {
+      const dotLeader = buildDotLeaderToMargin(beforePage, pageStr, {
+        indentStartPt: indentPt,
+        boldBefore: variant === 'intro',
+      });
+      this.insertText(dotLeader);
+      const pageStart = this.index;
+      this.insertText(pageStr);
+      this.textStyles.push({ start: pageStart, end: this.index, bold: true });
+    }
+
+    this.finishParagraph({
+      paragraphStart,
+      namedStyleType: 'NORMAL_TEXT',
+      spaceBelow: true,
+      indentStartPt: indentPt,
     });
   }
 
@@ -611,6 +725,18 @@ function processBlock(block, builder) {
     return;
   }
 
+  if (block.type === 'tocEntry') {
+    builder.finishTocEntry({
+      variant: block.variant,
+      chapterLabel: block.chapterLabel,
+      number: block.number,
+      title: block.title,
+      page: block.page,
+      level: block.level,
+    });
+    return;
+  }
+
   if (block.type === 'bibliographyEntry') {
     builder.finishBibliographyEntry({
       authorLabel: block.authorLabel,
@@ -644,6 +770,11 @@ function buildFormattingRequests(paragraphStyles, textStyles) {
       fields.push('indentStart', 'indentEnd');
     }
 
+    if (style.indentStartPt > 0) {
+      paragraphStyle.indentStart = { magnitude: style.indentStartPt, unit: 'PT' };
+      fields.push('indentStart');
+    }
+
     if (needsAlignment) {
       paragraphStyle.alignment = 'CENTER';
       fields.push('alignment');
@@ -673,11 +804,18 @@ function buildFormattingRequests(paragraphStyles, textStyles) {
       });
     }
 
+    const headingTextStyle = buildThesisTextStyle(thesisFontSizePt(style.namedStyleType));
+    const headingTextStyleFields = [THESIS_FONT_TEXT_STYLE_FIELDS];
+    if (isThesisHeadingStyle(style.namedStyleType)) {
+      headingTextStyle.bold = true;
+      headingTextStyleFields.push('bold');
+    }
+
     requests.push({
       updateTextStyle: {
         range: { startIndex: style.start, endIndex: style.end },
-        textStyle: buildThesisTextStyle(thesisFontSizePt(style.namedStyleType)),
-        fields: THESIS_FONT_TEXT_STYLE_FIELDS,
+        textStyle: headingTextStyle,
+        fields: headingTextStyleFields.join(','),
       },
     });
   }

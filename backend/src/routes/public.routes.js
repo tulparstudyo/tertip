@@ -1,9 +1,14 @@
 import { Router } from 'express';
 import { asyncHandler } from '../shared/utils/async-handler.util.js';
 import { sendSuccess } from '../shared/utils/api-response.util.js';
-import { env } from '../config/env.js';
 import { landingModel } from '../modules/admin/landing/landing.model.js';
 import { landingView } from '../modules/admin/landing/landing.view.js';
+import {
+  getWhatsappNumber,
+  getPaymentAmount,
+  getPaymentCurrency,
+} from '../shared/services/app-settings.service.js';
+import { themeSettingsController } from '../modules/admin/settings/theme-settings.controller.js';
 
 const router = Router();
 
@@ -13,7 +18,7 @@ router.get(
     const data = await landingModel.getContent();
     sendSuccess(res, {
       message: req.t('public.landing.get.success'),
-      data: landingView.formatLanding(data, { resolveEnv: true }),
+      data: landingView.formatLanding(data, { resolveSettings: true }),
     });
   }),
 );
@@ -24,12 +29,14 @@ router.get(
     sendSuccess(res, {
       message: req.t('public.siteConfig.get.success'),
       data: {
-        whatsappNumber: env.whatsappNumber,
-        paymentAmount: env.paymentAmount,
-        paymentCurrency: env.paymentCurrency,
+        whatsappNumber: getWhatsappNumber(),
+        paymentAmount: getPaymentAmount(),
+        paymentCurrency: getPaymentCurrency(),
       },
     });
   }),
 );
+
+router.get('/theme', themeSettingsController.getPublic);
 
 export default router;

@@ -141,6 +141,51 @@ export function buildAbstractDocFromParagraphs(paragraphs) {
   };
 }
 
+function paragraphNode(text) {
+  return {
+    type: 'paragraph',
+    content: [{ type: 'text', text: text.replace(/\s+/g, ' ').trim() }],
+  };
+}
+
+/** Parses AI output with optional ## subheadings into TipTap nodes. */
+export function parseGeneratedSonucBlocks(text) {
+  const blocks = text.split(/\n\s*\n/).map((block) => block.trim()).filter(Boolean);
+  const nodes = [];
+
+  for (const block of blocks) {
+    const lines = block.split('\n').map((line) => line.trim()).filter(Boolean);
+    if (!lines.length) continue;
+
+    if (lines[0].startsWith('## ')) {
+      nodes.push(heading(2, lines[0].replace(/^##\s+/, '').trim()));
+      const body = lines.slice(1).join(' ').trim();
+      if (body) nodes.push(paragraphNode(body));
+      continue;
+    }
+
+    nodes.push(paragraphNode(block));
+  }
+
+  return nodes;
+}
+
+export function buildSonucDocFromBlocks(nodes) {
+  const content = nodes.filter((node) => {
+    if (node.type !== 'paragraph') return true;
+    return Boolean(node.content?.[0]?.text?.trim());
+  });
+
+  return {
+    type: 'doc',
+    content: [heading(1, 'Sonuç'), ...content],
+  };
+}
+
+export function countSonucParagraphs(nodes) {
+  return nodes.filter((node) => node.type === 'paragraph').length;
+}
+
 const emptyParagraph = { type: 'paragraph' };
 
 /** Ekler: ortalı H1 başlık. */
@@ -248,7 +293,18 @@ export function buildDefaultSectionDoc(section, context = {}) {
     case 'kisaltmalar':
       return buildKisaltmalarListesiDoc();
     case 'icindekiler':
-      return { type: 'doc', content: [heading(2, 'İçindekiler'), emptyParagraph] };
+      return {
+        type: 'doc',
+        content: [
+          {
+            type: 'heading',
+            attrs: { level: 2, textAlign: 'center' },
+            content: [{ type: 'text', text: 'İÇİNDEKİLER', marks: [{ type: 'bold' }] }],
+          },
+        ],
+      };
+    case 'sonuc':
+      return { type: 'doc', content: [heading(1, 'Sonuç'), emptyParagraph] };
     case 'kaynakca':
       return buildKaynakcaListesiDoc();
     case 'body':

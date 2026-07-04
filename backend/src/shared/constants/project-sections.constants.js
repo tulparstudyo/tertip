@@ -10,6 +10,7 @@ export const PROJECT_SECTIONS = {
   ekler: 'tiptap_ekler',
   kisaltmalar: 'tiptap_kisaltmalar',
   icindekiler: 'tiptap_icindekiler',
+  sonuc: 'tiptap_sonuc',
   kaynakca: 'tiptap_kaynakca',
 };
 
@@ -23,6 +24,7 @@ export const GOOGLE_DOC_SYNC_ORDER = [
   'kisaltmalar',
   'icindekiler',
   'body',
+  'sonuc',
   'kaynakca',
 ];
 
@@ -36,6 +38,7 @@ export const GOOGLE_DOC_SECTION_LABELS = {
   kisaltmalar: 'Kısaltmalar Listesi',
   icindekiler: 'İçindekiler',
   body: 'Ana Metin',
+  sonuc: 'Sonuç',
   kaynakca: 'Kaynakça',
 };
 

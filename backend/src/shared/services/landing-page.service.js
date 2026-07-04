@@ -1,34 +1,52 @@
-import { env } from '../../config/env.js';
+import { getSettingsMap } from './app-settings.service.js';
 
 export const LANDING_PAGE_KEY = 'landing_page';
 
-const ENV_PLACEHOLDER_RESOLVERS = {
-  '[PAYMENT_AMOUNT]': () => (env.paymentAmount != null ? String(env.paymentAmount) : ''),
-  '[PAYMENT_CURRENCY]': () => env.paymentCurrency ?? 'TRY',
-};
+function buildSettingPlaceholderResolvers(settingsMap) {
+  const resolvers = {};
+  for (const [code, value] of Object.entries(settingsMap)) {
+    resolvers[`[${code}]`] = () => value ?? '';
+  }
+  return resolvers;
+}
 
-export function resolveLandingEnvPlaceholders(value) {
+export function resolveLandingSettingPlaceholders(value, settingsMap = getSettingsMap()) {
+  const resolvers = buildSettingPlaceholderResolvers(settingsMap);
+  return resolvePlaceholders(value, resolvers);
+}
+
+function resolvePlaceholders(value, resolvers) {
   if (value === null || value === undefined) return value;
   if (typeof value === 'string') {
     let result = value;
-    for (const [token, resolve] of Object.entries(ENV_PLACEHOLDER_RESOLVERS)) {
+    for (const [token, resolve] of Object.entries(resolvers)) {
       result = result.split(token).join(resolve());
     }
     return result;
   }
   if (Array.isArray(value)) {
-    return value.map((item) => resolveLandingEnvPlaceholders(item));
+    return value.map((item) => resolvePlaceholders(item, resolvers));
   }
   if (typeof value === 'object') {
     return Object.fromEntries(
-      Object.entries(value).map(([key, item]) => [key, resolveLandingEnvPlaceholders(item)]),
+      Object.entries(value).map(([key, item]) => [key, resolvePlaceholders(item, resolvers)]),
     );
   }
   return value;
 }
 
+/** @deprecated use resolveLandingSettingPlaceholders */
+export function resolveLandingEnvPlaceholders(value) {
+  return resolveLandingSettingPlaceholders(value);
+}
+
+export function getLandingSettingPlaceholderKeys(settingsMap = getSettingsMap()) {
+  return Object.keys(settingsMap).map((code) => `[${code}]`);
+}
+
+/** @deprecated use getLandingSettingPlaceholderKeys */
 export function getLandingEnvPlaceholderKeys() {
-  return Object.keys(ENV_PLACEHOLDER_RESOLVERS);
+  return getLandingSettingPlaceholderKeys();
 }
 
 export function getDefaultLandingContent() {

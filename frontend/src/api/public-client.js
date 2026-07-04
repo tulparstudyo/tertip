@@ -31,3 +31,18 @@ export async function fetchSiteConfig() {
 
   return data.data ?? null;
 }
+
+export async function fetchThemeSettings() {
+  const response = await fetch(`${API_BASE}/public/theme`, {
+    headers: {
+      'Accept-Language': i18n.global.locale.value,
+    },
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.message ?? 'Failed to load theme settings');
+  }
+
+  return data.data ?? null;
+}

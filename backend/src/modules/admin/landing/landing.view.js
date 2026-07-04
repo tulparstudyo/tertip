@@ -1,9 +1,9 @@
-import { resolveLandingEnvPlaceholders } from '../../../shared/services/landing-page.service.js';
+import { resolveLandingSettingPlaceholders } from '../../../shared/services/landing-page.service.js';
 
 export const landingView = {
-  formatLanding({ content, updatedAt }, { resolveEnv = false } = {}) {
+  formatLanding({ content, updatedAt }, { resolveSettings = false } = {}) {
     return {
-      content: resolveEnv ? resolveLandingEnvPlaceholders(content) : content,
+      content: resolveSettings ? resolveLandingSettingPlaceholders(content) : content,
       updatedAt,
     };
   },

@@ -1,6 +1,9 @@
 import { asyncHandler } from '../../../shared/utils/async-handler.util.js';
 import { sendSuccess, sendError } from '../../../shared/utils/api-response.util.js';
-import { env } from '../../../config/env.js';
+import {
+  getPaymentAmount,
+  getPaymentCurrency,
+} from '../../../shared/services/app-settings.service.js';
 import { bankTransferModel } from './payments.model.js';
 import { paymentsView } from './payments.view.js';
 
@@ -27,7 +30,7 @@ export const paymentsController = {
 
   create: asyncHandler(async (req, res) => {
     const { senderName, bankName, transferDate, referenceCode, notes } = req.body;
-    const amount = env.paymentAmount;
+    const amount = getPaymentAmount();
 
     if (!amount || amount <= 0) {
       return sendError(res, { status: 503, message: req.t('user.payments.amountNotConfigured') });
@@ -36,7 +39,7 @@ export const paymentsController = {
     const payment = await bankTransferModel.create({
       userId: req.user.id,
       amount,
-      currency: env.paymentCurrency,
+      currency: getPaymentCurrency(),
       senderName,
       bankName,
       transferDate,

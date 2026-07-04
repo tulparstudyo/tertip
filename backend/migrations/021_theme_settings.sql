@@ -1,0 +1,2 @@
+-- Theme settings stored in system_settings (key: theme_settings)
+-- Defaults are seeded on first API read if missing.

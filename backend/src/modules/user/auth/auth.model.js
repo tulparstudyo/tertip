@@ -1,5 +1,6 @@
 import { pool } from '../../../config/database.js';
 import { env } from '../../../config/env.js';
+import { getPasswordResetExpiresHours } from '../../../shared/services/app-settings.service.js';
 
 export const authModel = {
   async findByEmail(email) {
@@ -124,7 +125,7 @@ export const authModel = {
   async createPasswordResetToken(userId, tokenHash) {
     await authModel.invalidatePasswordResetTokens(userId);
     const expiresAt = new Date();
-    expiresAt.setHours(expiresAt.getHours() + env.passwordResetExpiresHours);
+    expiresAt.setHours(expiresAt.getHours() + getPasswordResetExpiresHours());
 
     const { rows } = await pool.query(
       `INSERT INTO password_reset_tokens (user_id, token_hash, expires_at)
