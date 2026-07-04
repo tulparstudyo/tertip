@@ -2,8 +2,16 @@
 import { ref, onMounted, watch, computed } from 'vue';
 import { RouterLink } from 'vue-router';
 import { useI18n } from 'vue-i18n';
+import {
+  IconFileText,
+  IconBrandGoogleDrive,
+  IconPencil,
+  IconShare,
+  IconTrash,
+} from '@tabler/icons-vue';
 import { api } from '@/api/client';
 import { useAuth } from '@/composables/useAuth';
+import { tablerIconProps } from '@/constants/icons.js';
 import {
   createEmptyMetadata,
   getMetadataFields,
@@ -12,12 +20,18 @@ import {
 const { t } = useI18n();
 const { user } = useAuth();
 
+const actionIcon = tablerIconProps.toolbar;
+
 const projects = ref([]);
 const loading = ref(true);
 const showForm = ref(false);
 const saving = ref(false);
 const editingProjectId = ref(null);
 const refreshKapak = ref(true);
+const showShareModal = ref(false);
+const shareSaving = ref(false);
+const shareEmail = ref('');
+const shareTarget = ref(null);
 
 const projectTypes = ['thesis', 'article', 'proceeding', 'book', 'proposal', 'other'];
 
@@ -135,13 +149,32 @@ async function deleteProject(id) {
   await loadProjects();
 }
 
-async function shareProject(project) {
-  const email = prompt(t('projects.sharePrompt'));
-  if (!email?.trim()) return;
-  await api(`/user/projects/${project.id}/shares`, {
-    method: 'POST',
-    body: { email: email.trim() },
-  });
+function openShareModal(project) {
+  shareTarget.value = project;
+  shareEmail.value = '';
+  showShareModal.value = true;
+}
+
+function closeShareModal() {
+  showShareModal.value = false;
+  shareTarget.value = null;
+  shareEmail.value = '';
+}
+
+async function submitShare() {
+  if (!shareTarget.value || !shareEmail.value.trim()) return;
+
+  shareSaving.value = true;
+  try {
+    await api(`/user/projects/${shareTarget.value.id}/shares`, {
+      method: 'POST',
+      body: { email: shareEmail.value.trim() },
+      notify: true,
+    });
+    closeShareModal();
+  } finally {
+    shareSaving.value = false;
+  }
 }
 
 function googleDriveUrl(project) {
@@ -279,55 +312,125 @@ onMounted(loadProjects);
         :key="project.id"
         class="bg-white rounded-xl shadow-page p-4 border border-slate-100 flex flex-wrap items-center justify-between gap-3"
       >
-        <div>
-          <p class="font-medium">{{ project.title }}</p>
+        <div class="min-w-0 basis-full w-full sm:basis-auto sm:flex-1">
+          <p class="font-medium block w-full">{{ project.title }}</p>
           <p class="text-sm text-slate-500">
             {{ t(`projects.types.${project.projectType}`) }}
             · {{ new Date(project.updatedAt).toLocaleDateString('tr-TR') }}
           </p>
         </div>
-        <div class="flex items-center gap-3">
+        <div class="flex items-center gap-1 basis-full w-full sm:basis-auto sm:w-auto sm:shrink-0">
           <RouterLink
             :to="{ name: 'project-editor', params: { projectId: project.id, section: 'body' } }"
-            class="text-sm text-indigo-600 hover:underline"
+            class="project-action-btn project-action-btn--primary"
+            :title="t('projects.openEditor')"
+            :aria-label="t('projects.openEditor')"
           >
-            {{ t('projects.openEditor') }}
+            <IconFileText v-bind="actionIcon" aria-hidden="true" />
           </RouterLink>
           <a
             v-if="googleDriveUrl(project)"
             :href="googleDriveUrl(project)"
             target="_blank"
             rel="noopener noreferrer"
-            class="text-sm text-indigo-600 hover:underline"
+            class="project-action-btn project-action-btn--primary"
+            :title="t('projects.openInDrive')"
+            :aria-label="t('projects.openInDrive')"
           >
-            {{ t('projects.openInDrive') }}
+            <IconBrandGoogleDrive v-bind="actionIcon" aria-hidden="true" />
           </a>
           <button
             v-if="project.isOwner !== false"
             type="button"
-            class="text-sm text-slate-600 hover:underline"
+            class="project-action-btn"
+            :title="t('projects.edit')"
+            :aria-label="t('projects.edit')"
             @click="openEditForm(project)"
           >
-            {{ t('projects.edit') }}
+            <IconPencil v-bind="actionIcon" aria-hidden="true" />
           </button>
           <button
             v-if="project.isOwner !== false"
             type="button"
-            class="text-sm text-slate-600 hover:underline"
-            @click="shareProject(project)"
+            class="project-action-btn"
+            :title="t('projects.share')"
+            :aria-label="t('projects.share')"
+            @click="openShareModal(project)"
           >
-            {{ t('projects.share') }}
+            <IconShare v-bind="actionIcon" aria-hidden="true" />
           </button>
           <button
             v-if="project.isOwner !== false"
             type="button"
-            class="text-sm text-red-600 hover:underline"
+            class="project-action-btn project-action-btn--danger"
+            :title="t('projects.delete')"
+            :aria-label="t('projects.delete')"
             @click="deleteProject(project.id)"
           >
-            {{ t('projects.delete') }}
+            <IconTrash v-bind="actionIcon" aria-hidden="true" />
           </button>
         </div>
       </li>
     </ul>
+
+    <div
+      v-if="showShareModal"
+      class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
+      @click.self="closeShareModal"
+    >
+      <div class="bg-white rounded-xl p-6 w-full max-w-md space-y-4">
+        <h3 class="text-lg font-semibold">{{ t('projects.share') }}</h3>
+        <p v-if="shareTarget" class="text-sm text-slate-600">
+          {{ shareTarget.title }}
+        </p>
+        <div>
+          <label class="block text-sm mb-1" for="share-email-input">
+            {{ t('projects.sharePrompt') }}
+          </label>
+          <input
+            id="share-email-input"
+            v-model="shareEmail"
+            type="email"
+            required
+            autocomplete="email"
+            class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 outline-none"
+            :placeholder="t('auth.email')"
+            @keyup.enter="submitShare"
+          />
+        </div>
+        <div class="flex gap-2 justify-end">
+          <button
+            type="button"
+            class="px-4 py-2 border rounded-lg hover:bg-slate-50"
+            :disabled="shareSaving"
+            @click="closeShareModal"
+          >
+            {{ t('common.cancel') }}
+          </button>
+          <button
+            type="button"
+            class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+            :disabled="shareSaving || !shareEmail.trim()"
+            @click="submitShare"
+          >
+            {{ shareSaving ? t('common.loading') : t('projects.share') }}
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
+
+<style scoped>
+.project-action-btn {
+  @apply inline-flex items-center justify-center w-8 h-8 rounded-lg text-slate-600 hover:bg-slate-100 hover:text-slate-800 transition-colors;
+}
+
+.project-action-btn--primary {
+  @apply text-indigo-600 hover:bg-indigo-50 hover:text-indigo-700;
+}
+
+.project-action-btn--danger {
+  @apply text-red-600 hover:bg-red-50 hover:text-red-700;
+}
+</style>

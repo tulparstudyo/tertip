@@ -1,11 +1,17 @@
 <script setup>
-import { ref, watch, onBeforeUnmount, computed } from 'vue';
+import { ref, watch, onBeforeUnmount, onMounted, computed } from 'vue';
 import { useEditor, EditorContent } from '@tiptap/vue-3';
 import StarterKit from '@tiptap/starter-kit';
+import Table from '@tiptap/extension-table';
+import TableRow from '@tiptap/extension-table-row';
+import TableCell from '@tiptap/extension-table-cell';
+import TableHeader from '@tiptap/extension-table-header';
 import { useI18n } from 'vue-i18n';
 import { api } from '@/api/client';
 import { toast } from '@/composables/useToast';
 import AcademicFootnote from './extensions/AcademicFootnote.js';
+import EditorComment from './extensions/EditorComment.js';
+import ProtectedInlineNodes from './extensions/ProtectedInlineNodes.js';
 import AppendixEntry from './extensions/AppendixEntry.js';
 import BibliographyEntry from './extensions/BibliographyEntry.js';
 import TextAlign from './extensions/TextAlign.js';
@@ -19,7 +25,50 @@ import {
   formatTurkishBibliographyEntry,
 } from '@/utils/turkish-bibliography.js';
 import ImageCitationModal from './ImageCitationModal.vue';
+import { IconPhoto, IconSparkles, IconBrandGoogleDrive, IconPlus, IconMinus, IconZoomReset, IconMessagePlus, IconBookmark } from '@tabler/icons-vue';
+import { tablerIconProps } from '@/constants/icons.js';
 import { getEditorSectionConfig } from '@/config/project-sections.js';
+import { getCookie, setCookie } from '@/utils/cookie.js';
+import { getEditorLineColumn, getVisibleEditorLineRange, getPosFromLineColumn } from '@/utils/editor-position.js';
+import { deleteProtectedNodeAt } from '@/utils/protected-node-delete.js';
+import { useNavAutoHide } from '@/composables/useNavAutoHide.js';
+import { centeredKisaltmalarTitle } from '@/utils/kisaltmalar-list.js';
+
+const toolbarIcon = tablerIconProps.toolbar;
+const { navHidden } = useNavAutoHide();
+
+const PAGE_ZOOM_MIN = 50;
+const PAGE_ZOOM_MAX = 200;
+const PAGE_ZOOM_STEP = 10;
+const PAGE_ZOOM_DEFAULT = 100;
+const PAGE_ZOOM_COOKIE = 'tertip_page_zoom';
+
+function readStoredPageZoom() {
+  const raw = getCookie(PAGE_ZOOM_COOKIE);
+  const parsed = Number.parseInt(raw ?? '', 10);
+  if (!Number.isFinite(parsed)) return PAGE_ZOOM_DEFAULT;
+  return Math.min(PAGE_ZOOM_MAX, Math.max(PAGE_ZOOM_MIN, parsed));
+}
+
+const pageZoom = ref(readStoredPageZoom());
+const pageScale = computed(() => pageZoom.value / 100);
+
+watch(pageZoom, (value) => {
+  setCookie(PAGE_ZOOM_COOKIE, value);
+  scheduleVisibleLinesUpdate();
+});
+
+function zoomIn() {
+  pageZoom.value = Math.min(PAGE_ZOOM_MAX, pageZoom.value + PAGE_ZOOM_STEP);
+}
+
+function zoomOut() {
+  pageZoom.value = Math.max(PAGE_ZOOM_MIN, pageZoom.value - PAGE_ZOOM_STEP);
+}
+
+function resetPageZoom() {
+  pageZoom.value = PAGE_ZOOM_DEFAULT;
+}
 
 const props = defineProps({
   projectId: { type: Number, default: null },
@@ -30,6 +79,22 @@ const props = defineProps({
   initialContent: { type: Object, default: null },
   canEdit: { type: Boolean, default: true },
 });
+
+const emit = defineEmits(['comment-added', 'visible-lines-change', 'comments-updated']);
+
+let visibleLinesRaf = null;
+
+function scheduleVisibleLinesUpdate() {
+  if (!props.projectId) return;
+  if (visibleLinesRaf) cancelAnimationFrame(visibleLinesRaf);
+  visibleLinesRaf = requestAnimationFrame(updateVisibleLines);
+}
+
+function updateVisibleLines() {
+  visibleLinesRaf = null;
+  if (!editor.value || !props.projectId) return;
+  emit('visible-lines-change', getVisibleEditorLineRange(editor.value));
+}
 
 const { t } = useI18n();
 const toolbarConfig = computed(() => getEditorSectionConfig(props.section));
@@ -71,12 +136,35 @@ const generateKapakLoading = ref(false);
 const generateOzLoading = ref(false);
 const generateAbstractLoading = ref(false);
 const generateKaynakcaLoading = ref(false);
+const insertStandardAbbreviationsLoading = ref(false);
 const showAppendixModal = ref(false);
 const editingAppendixPos = ref(null);
 const appendixForm = ref({ number: 1, title: '', page: '' });
 const showBibliographyModal = ref(false);
 const editingBibliographyPos = ref(null);
 const bibliographyForm = ref({ sourceId: '' });
+const showCommentModal = ref(false);
+const showCommentViewModal = ref(false);
+const commentSaving = ref(false);
+const commentInsertPos = ref(null);
+const editingCommentPos = ref(null);
+const commentDeleting = ref(false);
+const commentForm = ref({ text: '' });
+const commentView = ref({
+  commentId: null,
+  commentText: '',
+  userName: '',
+  createdAt: '',
+  lineNumber: null,
+  columnOffset: null,
+  isResolved: false,
+});
+
+const showAddComment = computed(() => Boolean(props.projectId) && props.canEdit);
+
+const showInsertStandardAbbreviations = computed(
+  () => Boolean(toolbarConfig.value.standardAbbreviations) && props.canEdit,
+);
 
 const showGenerateKapak = computed(
   () => props.section === 'kapak' && props.projectType === 'thesis' && props.canEdit,
@@ -104,6 +192,7 @@ const showImageCitations = computed(
 
 const isEklerSection = computed(() => props.section === 'ekler');
 const isKaynakcaSection = computed(() => props.section === 'kaynakca');
+const isKisaltmalarSection = computed(() => props.section === 'kisaltmalar');
 
 let debounceTimer = null;
 let skipSave = true;
@@ -175,7 +264,7 @@ function buildDefaultContent() {
     },
     kisaltmalar: {
       type: 'doc',
-      content: [defaultHeading(2, t('editor.sections.kisaltmalar')), { type: 'paragraph' }],
+      content: [centeredKisaltmalarTitle()],
     },
     icindekiler: {
       type: 'doc',
@@ -201,8 +290,14 @@ async function saveContent(json, { silent = true } = {}) {
     });
     saveCycleActive = false;
 
+    const positionsChanged = await syncCommentPositionsFromEditor();
+
     if (silent) {
       toast.success(res.message ?? t('editor.syncSaved'));
+    }
+
+    if (positionsChanged) {
+      emit('comments-updated');
     }
 
     return res;
@@ -309,18 +404,52 @@ async function generateKaynakca() {
   }
 }
 
+async function insertStandardAbbreviations() {
+  if (!showInsertStandardAbbreviations.value) return;
+
+  insertStandardAbbreviationsLoading.value = true;
+  try {
+    const res = await api('/user/settings/standard-abbreviations');
+    skipSave = true;
+    editor.value?.commands.setContent(res.data?.content ?? buildDefaultContent());
+    skipSave = false;
+    saveCycleActive = false;
+    await saveContent(editor.value?.getJSON(), { silent: false });
+    toast.success(res.message ?? t('editor.insertStandardAbbreviationsSuccess'));
+  } catch {
+    // Error toast is already shown by api().
+  } finally {
+    insertStandardAbbreviationsLoading.value = false;
+  }
+}
+
 function buildEditorExtensions() {
   const extensions = [
     StarterKit,
+    ProtectedInlineNodes,
     AcademicFootnote.configure({
       onSingleClick(dom) {
         clearFootnotePreviews();
+        clearCommentPreviews();
         dom.classList.add('is-preview');
       },
       onDoubleClick({ pos, attrs }) {
         if (!props.canEdit) return;
         clearFootnotePreviews();
+        clearCommentPreviews();
         openFootnoteEditModal(pos, attrs);
+      },
+    }),
+    EditorComment.configure({
+      onSingleClick(dom) {
+        clearCommentPreviews();
+        clearFootnotePreviews();
+        dom.classList.add('is-preview');
+      },
+      onDoubleClick({ pos, attrs }) {
+        clearCommentPreviews();
+        clearFootnotePreviews();
+        openCommentViewModal({ pos, attrs });
       },
     }),
     AppendixEntry.configure({
@@ -342,8 +471,20 @@ function buildEditorExtensions() {
     );
   }
 
-  if (props.section === 'kapak' || props.section === 'ekler' || props.section === 'kaynakca') {
+  if (props.section === 'kapak' || props.section === 'ekler' || props.section === 'kaynakca' || props.section === 'kisaltmalar') {
     extensions.push(TextAlign);
+  }
+
+  if (props.section === 'kisaltmalar') {
+    extensions.push(
+      Table.configure({
+        resizable: false,
+        HTMLAttributes: { class: 'kisaltmalar-table' },
+      }),
+      TableRow,
+      TableHeader,
+      TableCell,
+    );
   }
 
   return extensions;
@@ -570,6 +711,283 @@ function clearFootnotePreviews() {
   });
 }
 
+function clearCommentPreviews() {
+  document.querySelectorAll('.ProseMirror .editor-comment.is-preview').forEach((el) => {
+    el.classList.remove('is-preview');
+  });
+}
+
+function openCommentModal() {
+  if (!editor.value || !props.projectId) return;
+  commentInsertPos.value = editor.value.state.selection.from;
+  commentForm.value = { text: '' };
+  showCommentModal.value = true;
+}
+
+function closeCommentModal() {
+  showCommentModal.value = false;
+  commentInsertPos.value = null;
+  commentForm.value = { text: '' };
+}
+
+function openCommentViewModal({ pos, attrs }) {
+  editingCommentPos.value = pos;
+  commentView.value = {
+    commentId: attrs.commentId ?? null,
+    commentText: attrs.commentText ?? '',
+    userName: attrs.userName ?? '',
+    createdAt: attrs.createdAt ?? '',
+    lineNumber: attrs.lineNumber ?? null,
+    columnOffset: attrs.columnOffset ?? null,
+    isResolved: Boolean(attrs.isResolved),
+  };
+  showCommentViewModal.value = true;
+}
+
+function closeCommentViewModal() {
+  showCommentViewModal.value = false;
+  editingCommentPos.value = null;
+}
+
+function formatCommentDate(value) {
+  if (!value) return '';
+  return new Date(value).toLocaleString('tr-TR');
+}
+
+function getCommentIdsInDocument(ed) {
+  const ids = new Set();
+  ed.state.doc.descendants((node) => {
+    if (node.type.name === 'editorComment' && node.attrs.commentId != null) {
+      ids.add(Number(node.attrs.commentId));
+    }
+  });
+  return ids;
+}
+
+function buildEditorCommentNode(comment) {
+  return {
+    type: 'editorComment',
+    attrs: {
+      commentId: comment.id,
+      tiptapCommentId: comment.tiptapCommentId,
+      commentText: comment.commentText,
+      userName: comment.userName,
+      createdAt: comment.createdAt,
+      lineNumber: comment.lineNumber,
+      columnOffset: comment.columnOffset,
+      isResolved: Boolean(comment.isResolved),
+    },
+  };
+}
+
+function syncCommentAttrsFromApi(comments) {
+  if (!editor.value) return false;
+
+  const commentMap = new Map(comments.map((c) => [Number(c.id), c]));
+  const tr = editor.value.state.tr;
+  let changed = false;
+
+  editor.value.state.doc.descendants((node, pos) => {
+    if (node.type.name !== 'editorComment' || node.attrs.commentId == null) return;
+
+    const comment = commentMap.get(Number(node.attrs.commentId));
+    if (!comment) return;
+
+    const nextAttrs = {
+      ...node.attrs,
+      commentText: comment.commentText,
+      userName: comment.userName,
+      isResolved: Boolean(comment.isResolved),
+    };
+
+    if (
+      node.attrs.commentText !== nextAttrs.commentText
+      || node.attrs.userName !== nextAttrs.userName
+      || node.attrs.isResolved !== nextAttrs.isResolved
+    ) {
+      tr.setNodeMarkup(pos, undefined, nextAttrs);
+      changed = true;
+    }
+  });
+
+  if (changed) {
+    skipSave = true;
+    editor.value.view.dispatch(tr);
+    skipSave = false;
+  }
+
+  return changed;
+}
+
+function collectCommentPositionsFromEditor(ed) {
+  const items = [];
+  ed.state.doc.descendants((node, pos) => {
+    if (node.type.name !== 'editorComment' || node.attrs.commentId == null) return;
+    const { lineNumber, columnOffset } = getEditorLineColumn(ed.state.doc, pos);
+    items.push({
+      commentId: Number(node.attrs.commentId),
+      lineNumber,
+      columnOffset,
+      storedLine: node.attrs.lineNumber,
+      storedCol: node.attrs.columnOffset,
+    });
+  });
+  return items;
+}
+
+async function syncCommentPositionsFromEditor() {
+  if (!editor.value || !props.projectId) return false;
+
+  const items = collectCommentPositionsFromEditor(editor.value);
+  if (items.length === 0) return false;
+
+  const positionsChanged = items.some(
+    (item) => item.lineNumber !== item.storedLine || item.columnOffset !== item.storedCol,
+  );
+
+  try {
+    await api(`/user/projects/${props.projectId}/comments/sync-positions`, {
+      method: 'PUT',
+      body: {
+        sectionSlug: props.section,
+        positions: items.map(({ commentId, lineNumber, columnOffset }) => ({
+          commentId,
+          lineNumber,
+          columnOffset,
+        })),
+      },
+      silent: true,
+    });
+    return positionsChanged;
+  } catch {
+    return false;
+  }
+}
+
+async function syncCommentMarkersFromApi() {
+  if (!editor.value || !props.projectId) return;
+
+  try {
+    const res = await api(
+      `/user/projects/${props.projectId}/comments?section=${encodeURIComponent(props.section)}`,
+      { silent: true },
+    );
+    const comments = res.data ?? [];
+    if (comments.length === 0) return;
+
+    const attrsChanged = syncCommentAttrsFromApi(comments);
+
+    const existingIds = getCommentIdsInDocument(editor.value);
+    const missing = comments.filter((c) => !existingIds.has(Number(c.id)));
+    if (missing.length === 0) {
+      if (attrsChanged) {
+        await saveContent(editor.value.getJSON(), { silent: true });
+      }
+      return;
+    }
+
+    missing.sort((a, b) => {
+      if (b.lineNumber !== a.lineNumber) return b.lineNumber - a.lineNumber;
+      return b.columnOffset - a.columnOffset;
+    });
+
+    skipSave = true;
+    for (const comment of missing) {
+      const pos = getPosFromLineColumn(
+        editor.value.state.doc,
+        comment.lineNumber,
+        comment.columnOffset,
+      );
+      editor.value
+        .chain()
+        .insertContentAt(pos, buildEditorCommentNode(comment))
+        .run();
+    }
+    skipSave = false;
+
+    await saveContent(editor.value.getJSON(), { silent: true });
+  } catch {
+    skipSave = false;
+  }
+}
+
+async function saveComment() {
+  if (!editor.value || commentInsertPos.value === null || !commentForm.value.text.trim()) return;
+
+  commentSaving.value = true;
+  try {
+    const pos = commentInsertPos.value;
+    const { lineNumber, columnOffset } = getEditorLineColumn(editor.value.state.doc, pos);
+    const tiptapCommentId = crypto.randomUUID();
+
+    const res = await api(`/user/projects/${props.projectId}/comments`, {
+      method: 'POST',
+      body: {
+        commentText: commentForm.value.text.trim(),
+        lineNumber,
+        columnOffset,
+        tiptapCommentId,
+        sectionSlug: props.section,
+      },
+    });
+
+    const saved = res.data;
+    editor.value
+      ?.chain()
+      .focus()
+      .setTextSelection(pos)
+      .insertContent({
+        type: 'editorComment',
+        attrs: {
+          commentId: saved.id,
+          tiptapCommentId: saved.tiptapCommentId,
+          commentText: saved.commentText,
+          userName: saved.userName,
+          createdAt: saved.createdAt,
+          lineNumber: saved.lineNumber,
+          columnOffset: saved.columnOffset,
+          isResolved: false,
+        },
+      })
+      .run();
+
+    closeCommentModal();
+    emit('comment-added');
+    toast.success(res.message ?? t('comments.added'));
+    await flushPendingSave();
+  } finally {
+    commentSaving.value = false;
+  }
+}
+
+async function deleteComment() {
+  if (
+    editingCommentPos.value === null
+    || !editor.value
+    || !props.projectId
+    || !commentView.value.commentId
+  ) {
+    return;
+  }
+
+  if (!confirm(t('editor.deleteCommentConfirm'))) return;
+
+  commentDeleting.value = true;
+  try {
+    const res = await api(
+      `/user/projects/${props.projectId}/comments/${commentView.value.commentId}`,
+      { method: 'DELETE' },
+    );
+    deleteProtectedNodeAt(editor.value, editingCommentPos.value);
+    closeCommentViewModal();
+    emit('comment-added');
+    toast.success(res.message ?? t('comments.deleted'));
+    await flushPendingSave();
+  } finally {
+    commentDeleting.value = false;
+  }
+}
+
 function openFootnoteEditModal(pos, attrs) {
   if (attrs.isImageCitation) {
     openImageCitationEditModal(pos, attrs);
@@ -640,10 +1058,15 @@ const editor = useEditor({
       if (node.type.name !== 'academicFootnote') {
         clearFootnotePreviews();
       }
+      if (node.type.name !== 'editorComment') {
+        clearCommentPreviews();
+      }
       return false;
     },
   },
   onUpdate: ({ editor: ed }) => {
+    scheduleVisibleLinesUpdate();
+
     if (skipSave || !props.projectId || !props.canEdit) return;
 
     if (!saveCycleActive) {
@@ -671,7 +1094,7 @@ function toggleHeading(level) {
 }
 
 function toggleQuote() {
-  runCommand(() => editor.value?.chain().focus().toggleItalic());
+  runCommand(() => editor.value?.chain().focus().toggleBlockquote());
 }
 
 async function loadSources({ q = '', ids = [] } = {}) {
@@ -779,6 +1202,13 @@ function onImageCitationSaved(attrs) {
   closeImageCitationModal();
 }
 
+function onImageCitationDeleted() {
+  if (editingImageFootnotePos.value !== null && editor.value) {
+    deleteProtectedNodeAt(editor.value, editingImageFootnotePos.value);
+  }
+  closeImageCitationModal();
+}
+
 function formatSourceOptionLabel(source) {
   const author = buildAuthorsDisplay(source);
   if (author) return `${source.title} (${author})`;
@@ -835,6 +1265,31 @@ function saveFootnote() {
       .run();
   }
 
+  closeFootnoteModal();
+}
+
+async function deleteFootnote() {
+  if (editingFootnotePos.value === null || !editor.value) return;
+  if (!confirm(t('editor.deleteFootnoteConfirm'))) return;
+
+  const node = editor.value.state.doc.nodeAt(editingFootnotePos.value);
+  if (!node || node.type.name !== 'academicFootnote') return;
+
+  const pos = editingFootnotePos.value;
+
+  if (node.attrs.isImageCitation && node.attrs.imageCitationId) {
+    try {
+      const res = await api(
+        `/user/projects/${props.projectId}/citation-images/${node.attrs.imageCitationId}`,
+        { method: 'DELETE' },
+      );
+      toast.success(res.message ?? t('editor.imageCitationDeleted'));
+    } catch {
+      return;
+    }
+  }
+
+  deleteProtectedNodeAt(editor.value, pos);
   closeFootnoteModal();
 }
 
@@ -962,12 +1417,13 @@ function aiChangeCategoryLabel(category) {
 
 watch(
   () => props.initialContent,
-  (content) => {
+  async (content) => {
     if (editor.value) {
       skipSave = true;
       editor.value.commands.setContent(content ?? buildDefaultContent());
       skipSave = false;
       saveCycleActive = false;
+      await syncCommentMarkersFromApi();
     }
   },
 );
@@ -980,12 +1436,29 @@ watch(
 watch(
   () => editor.value,
   (ed) => {
-    if (ed) setTimeout(() => { skipSave = false; }, 100);
+    if (ed) {
+      setTimeout(async () => {
+        skipSave = false;
+        scheduleVisibleLinesUpdate();
+        await syncCommentMarkersFromApi();
+      }, 100);
+    }
   },
   { immediate: true },
 );
 
+onMounted(() => {
+  window.addEventListener('scroll', scheduleVisibleLinesUpdate, { passive: true });
+  window.addEventListener('resize', scheduleVisibleLinesUpdate, { passive: true });
+  scheduleVisibleLinesUpdate();
+});
+
+defineExpose({ syncCommentMarkersFromApi });
+
 onBeforeUnmount(() => {
+  window.removeEventListener('scroll', scheduleVisibleLinesUpdate);
+  window.removeEventListener('resize', scheduleVisibleLinesUpdate);
+  if (visibleLinesRaf) cancelAnimationFrame(visibleLinesRaf);
   void flushPendingSave();
   editor.value?.destroy();
 });
@@ -1003,10 +1476,21 @@ onBeforeUnmount(() => {
 
     <div
       v-if="canEdit"
-      class="editor-toolbar sticky top-14 z-20 -mx-1 px-1 py-2 mb-4 bg-slate-100/95 backdrop-blur-sm border-b border-slate-200/80"
+      class="editor-toolbar sticky z-20 -mx-1 px-1 py-2 mb-4 bg-slate-100/95 backdrop-blur-sm border-b border-slate-200/80 transition-[top] duration-300 ease-in-out"
+      :class="navHidden ? 'top-0' : 'top-14'"
     >
       <div class="flex flex-wrap items-center gap-2">
-        <div v-if="toolbarConfig.bold || toolbarConfig.italic" class="toolbar-group">
+        <div
+          v-if="
+            toolbarConfig.bold
+            || toolbarConfig.italic
+            || toolbarConfig.headings?.length
+            || toolbarConfig.bulletList
+            || toolbarConfig.orderedList
+            || toolbarConfig.blockquote
+          "
+          class="toolbar-group"
+        >
           <button
             v-if="toolbarConfig.bold"
             type="button"
@@ -1027,9 +1511,6 @@ onBeforeUnmount(() => {
           >
             I
           </button>
-        </div>
-
-        <div v-if="toolbarConfig.headings?.length" class="toolbar-group">
           <button
             v-for="level in toolbarConfig.headings"
             :key="`h${level}`"
@@ -1041,12 +1522,6 @@ onBeforeUnmount(() => {
           >
             H{{ level }}
           </button>
-        </div>
-
-        <div
-          v-if="toolbarConfig.bulletList || toolbarConfig.orderedList || toolbarConfig.blockquote"
-          class="toolbar-group"
-        >
           <button
             v-if="toolbarConfig.bulletList"
             type="button"
@@ -1071,7 +1546,7 @@ onBeforeUnmount(() => {
             v-if="toolbarConfig.blockquote"
             type="button"
             class="toolbar-btn italic"
-            :class="{ 'is-active': editor?.isActive('italic') }"
+            :class="{ 'is-active': editor?.isActive('blockquote') }"
             :title="t('editor.toolbar.blockquote')"
             @click="toggleQuote"
           >
@@ -1097,9 +1572,10 @@ onBeforeUnmount(() => {
             type="button"
             class="toolbar-btn toolbar-btn--label"
             :title="t('editor.footnoteHint')"
+            :aria-label="t('editor.addFootnote')"
             @click="openFootnoteModal"
           >
-            {{ t('editor.addFootnote') }}
+            <IconBookmark v-bind="toolbarIcon" aria-hidden="true" />
           </button>
           <button
             v-if="showImageCitations"
@@ -1108,9 +1584,7 @@ onBeforeUnmount(() => {
             :title="t('editor.imageCitationHint')"
             @click="openImageCitationPicker"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4" aria-hidden="true">
-              <path fill-rule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm1 2a1 1 0 100 2h1a1 1 0 100-2H5zm3.707 5.707a1 1 0 00-1.414-1.414L5 12.586V11a1 1 0 10-2 0v3a1 1 0 001 1h3a1 1 0 100-2H6.414l2.293-2.293zM15 7a1 1 0 100 2 1 1 0 000-2z" clip-rule="evenodd" />
-            </svg>
+            <IconPhoto v-bind="toolbarIcon" aria-hidden="true" />
           </button>
           <input
             ref="imageCitationInput"
@@ -1129,6 +1603,29 @@ onBeforeUnmount(() => {
             @click="checkFootnotes"
           >
             {{ checkFootnotesLoading ? t('common.loading') : t('editor.checkFootnotes') }}
+          </button>
+        </div>
+
+        <div v-if="showAddComment || showInsertStandardAbbreviations" class="toolbar-group">
+          <button
+            v-if="showAddComment"
+            type="button"
+            class="toolbar-btn toolbar-btn--label"
+            :title="t('editor.addCommentHint')"
+            :aria-label="t('editor.addComment')"
+            @click="openCommentModal"
+          >
+            <IconMessagePlus v-bind="toolbarIcon" aria-hidden="true" />
+          </button>
+          <button
+            v-if="showInsertStandardAbbreviations"
+            type="button"
+            class="toolbar-btn toolbar-btn--label"
+            :disabled="insertStandardAbbreviationsLoading"
+            :title="t('editor.insertStandardAbbreviationsHint')"
+            @click="insertStandardAbbreviations"
+          >
+            {{ insertStandardAbbreviationsLoading ? t('common.loading') : t('editor.insertStandardAbbreviations') }}
           </button>
         </div>
 
@@ -1204,29 +1701,7 @@ onBeforeUnmount(() => {
             @click="rewriteSelection"
           >
             <template v-if="aiLoading">{{ t('common.loading') }}</template>
-            <svg
-              v-else
-              class="toolbar-icon toolbar-icon--gemini"
-              viewBox="0 0 24 24"
-              xmlns="http://www.w3.org/2000/svg"
-              aria-hidden="true"
-            >
-              <defs>
-                <linearGradient id="gemini-gradient-ai" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stop-color="#4285F4" />
-                  <stop offset="50%" stop-color="#9B72CB" />
-                  <stop offset="100%" stop-color="#D96570" />
-                </linearGradient>
-              </defs>
-              <path
-                fill="url(#gemini-gradient-ai)"
-                d="M12 2.5c.2 2.8 2.4 5 5.2 5.2-2.8.2-5 2.4-5.2 5.2-.2-2.8-2.4-5-5.2-5.2 2.8-.2 5-2.4 5.2-5.2z"
-              />
-              <path
-                fill="url(#gemini-gradient-ai)"
-                d="M18.5 12c-.1 1.4-1.1 2.4-2.5 2.5 1.4.1 2.4 1.1 2.5 2.5.1-1.4 1.1-2.4 2.5-2.5-1.4-.1-2.4-1.1-2.5-2.5z"
-              />
-            </svg>
+            <IconSparkles v-else v-bind="toolbarIcon" aria-hidden="true" />
           </button>
           <button
             type="button"
@@ -1237,33 +1712,67 @@ onBeforeUnmount(() => {
             @click="syncToGoogleDrive"
           >
             <template v-if="driveSyncLoading">{{ t('common.loading') }}</template>
-            <template v-else>
-              <svg class="toolbar-icon toolbar-icon--drive" viewBox="0 0 87.3 78" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                <path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da" />
-                <path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44a9.06 9.06 0 0 0-1.2 4.5h27.5z" fill="#00ac47" />
-                <path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z" fill="#ea4335" />
-                <path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d" />
-                <path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc" />
-                <path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 28h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00" />
-              </svg>
-            </template>
+            <IconBrandGoogleDrive v-else v-bind="toolbarIcon" aria-hidden="true" />
           </button>
         </div>
       </div>
     </div>
 
     <div class="overflow-x-auto pb-8">
-      <div
-        class="a4-page bg-white shadow-page mx-auto"
-        :class="{
-          'opacity-90': !canEdit,
-          'a4-page--kapak': section === 'kapak',
-          'a4-page--ekler': isEklerSection,
-          'a4-page--kaynakca': isKaynakcaSection,
-        }"
-      >
-        <div class="a4-page-content">
-          <EditorContent :editor="editor" />
+      <div class="flex justify-center mb-3">
+        <div class="page-zoom-toolbar" role="toolbar" :aria-label="t('editor.pageZoom')">
+          <button
+            type="button"
+            class="page-zoom-btn"
+            :disabled="pageZoom <= PAGE_ZOOM_MIN"
+            :title="t('editor.zoomOut')"
+            :aria-label="t('editor.zoomOut')"
+            @click="zoomOut"
+          >
+            <IconMinus v-bind="toolbarIcon" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            class="page-zoom-btn page-zoom-btn--reset"
+            :title="t('editor.zoomReset')"
+            :aria-label="t('editor.zoomReset')"
+            @click="resetPageZoom"
+          >
+            <IconZoomReset v-bind="toolbarIcon" aria-hidden="true" />
+            <span class="page-zoom-label">{{ pageZoom }}%</span>
+          </button>
+          <button
+            type="button"
+            class="page-zoom-btn"
+            :disabled="pageZoom >= PAGE_ZOOM_MAX"
+            :title="t('editor.zoomIn')"
+            :aria-label="t('editor.zoomIn')"
+            @click="zoomIn"
+          >
+            <IconPlus v-bind="toolbarIcon" aria-hidden="true" />
+          </button>
+        </div>
+      </div>
+
+      <div class="flex justify-center">
+        <div
+          class="a4-page-scale-host"
+          :style="{ transform: `scale(${pageScale})`, transformOrigin: 'top center' }"
+        >
+          <div
+            class="a4-page bg-white shadow-page mx-auto"
+            :class="{
+              'opacity-90': !canEdit,
+              'a4-page--kapak': section === 'kapak',
+              'a4-page--ekler': isEklerSection,
+              'a4-page--kaynakca': isKaynakcaSection,
+              'a4-page--kisaltmalar': isKisaltmalarSection,
+            }"
+          >
+            <div class="a4-page-content">
+              <EditorContent :editor="editor" />
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -1441,8 +1950,82 @@ onBeforeUnmount(() => {
       :initial-page-number="imageCitationInitialPageNumber"
       :initial-citation-text="imageCitationInitialCitationText"
       @saved="onImageCitationSaved"
+      @deleted="onImageCitationDeleted"
       @close="closeImageCitationModal"
     />
+
+    <div
+      v-if="showCommentModal"
+      class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
+    >
+      <div class="bg-white rounded-xl p-6 w-full max-w-md space-y-3">
+        <h3 class="font-semibold">{{ t('editor.addComment') }}</h3>
+        <p class="text-xs text-slate-500">{{ t('editor.addCommentPositionHint') }}</p>
+        <textarea
+          v-model="commentForm.text"
+          rows="4"
+          class="w-full border rounded-lg px-3 py-2 text-sm"
+          :placeholder="t('comments.placeholder')"
+        />
+        <div class="flex gap-2 justify-end">
+          <button type="button" class="px-4 py-2 border rounded-lg" @click="closeCommentModal">
+            {{ t('common.cancel') }}
+          </button>
+          <button
+            type="button"
+            class="px-4 py-2 bg-indigo-600 text-white rounded-lg disabled:opacity-50"
+            :disabled="commentSaving || !commentForm.text.trim()"
+            @click="saveComment"
+          >
+            {{ commentSaving ? t('common.loading') : t('comments.submit') }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div
+      v-if="showCommentViewModal"
+      class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
+    >
+      <div
+        class="bg-white rounded-xl p-6 w-full max-w-md space-y-3"
+        :class="commentView.isResolved ? 'ring-2 ring-emerald-200' : 'ring-2 ring-amber-200'"
+      >
+        <h3 class="font-semibold">{{ t('comments.viewTitle') }}</h3>
+        <p
+          class="text-sm font-medium"
+          :class="commentView.isResolved ? 'text-emerald-800' : 'text-amber-800'"
+        >
+          {{ commentView.userName }}
+        </p>
+        <p
+          class="text-xs"
+          :class="commentView.isResolved ? 'text-emerald-600' : 'text-amber-600'"
+        >
+          {{ formatCommentDate(commentView.createdAt) }}
+        </p>
+        <p
+          class="text-sm whitespace-pre-wrap"
+          :class="commentView.isResolved ? 'text-emerald-900' : 'text-amber-900'"
+        >
+          {{ commentView.commentText }}
+        </p>
+        <div class="flex gap-2 justify-end">
+          <button
+            v-if="canEdit && commentView.commentId"
+            type="button"
+            class="px-4 py-2 border border-red-200 text-red-700 rounded-lg mr-auto disabled:opacity-50"
+            :disabled="commentDeleting"
+            @click="deleteComment"
+          >
+            {{ commentDeleting ? t('common.loading') : t('editor.deleteComment') }}
+          </button>
+          <button type="button" class="px-4 py-2 border rounded-lg" @click="closeCommentViewModal">
+            {{ t('common.cancel') }}
+          </button>
+        </div>
+      </div>
+    </div>
 
     <div
       v-if="showFootnoteModal"
@@ -1481,6 +2064,14 @@ onBeforeUnmount(() => {
           :placeholder="footnoteCitationPlaceholder"
         />
         <div class="flex gap-2 justify-end">
+          <button
+            v-if="editingFootnotePos !== null"
+            type="button"
+            class="px-4 py-2 border border-red-200 text-red-700 rounded-lg mr-auto"
+            @click="deleteFootnote"
+          >
+            {{ t('editor.deleteFootnote') }}
+          </button>
           <button type="button" class="px-4 py-2 border rounded-lg" @click="closeFootnoteModal">
             {{ t('common.cancel') }}
           </button>
@@ -1523,21 +2114,34 @@ onBeforeUnmount(() => {
   @apply text-indigo-700 hover:bg-indigo-50;
 }
 
-.toolbar-icon {
-  @apply w-4 h-4;
-}
-
-.toolbar-icon--drive {
-  @apply w-[1.125rem] h-[1rem];
-}
-
-.toolbar-icon--gemini {
-  @apply w-[1.125rem] h-[1.125rem];
-}
-
 .toolbar-btn--success {
   @apply text-emerald-800 hover:bg-emerald-50;
 }
+
+.page-zoom-toolbar {
+  @apply inline-flex items-stretch rounded-lg border border-slate-300 bg-white shadow-sm overflow-hidden;
+}
+
+.page-zoom-btn {
+  @apply inline-flex items-center justify-center gap-1 px-2.5 py-1.5 text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors min-w-[2.25rem];
+}
+
+.page-zoom-btn:not(:last-child) {
+  @apply border-r border-slate-300;
+}
+
+.page-zoom-btn--reset {
+  @apply px-3 text-indigo-700 hover:bg-indigo-50;
+}
+
+.page-zoom-label {
+  @apply text-xs font-medium tabular-nums;
+}
+
+.a4-page-scale-host {
+  @apply transition-transform duration-150 ease-out;
+}
+
 :deep(.academic-footnote) {
   @apply relative inline-flex items-center align-super mx-0.5 cursor-pointer select-none;
 }
@@ -1562,6 +2166,38 @@ onBeforeUnmount(() => {
 
 :deep(.academic-footnote:hover .academic-footnote-tooltip),
 :deep(.academic-footnote.is-preview .academic-footnote-tooltip) {
+  @apply block;
+}
+
+:deep(.editor-comment) {
+  @apply relative inline-flex items-center align-super mx-0.5 cursor-pointer select-none;
+}
+
+:deep(.editor-comment-icon) {
+  @apply inline-flex items-center justify-center w-[1.1rem] h-[1.1rem] rounded-sm bg-amber-100 text-amber-700 leading-none;
+}
+
+:deep(.editor-comment--resolved .editor-comment-icon) {
+  @apply bg-emerald-100 text-emerald-700;
+}
+
+:deep(.editor-comment-icon svg) {
+  @apply w-3 h-3;
+}
+
+:deep(.editor-comment-tooltip) {
+  @apply absolute left-1/2 bottom-full mb-1.5 -translate-x-1/2 hidden z-30;
+  @apply w-max max-w-xs px-3 py-2 text-xs leading-snug rounded-lg shadow-lg;
+  @apply whitespace-pre-wrap text-left pointer-events-none;
+  @apply text-amber-900 bg-amber-50 border border-amber-200;
+}
+
+:deep(.editor-comment--resolved .editor-comment-tooltip) {
+  @apply text-emerald-900 bg-emerald-50 border-emerald-200;
+}
+
+:deep(.editor-comment:hover .editor-comment-tooltip),
+:deep(.editor-comment.is-preview .editor-comment-tooltip) {
   @apply block;
 }
 
@@ -1661,6 +2297,50 @@ onBeforeUnmount(() => {
 
 .a4-page--kaynakca :deep(.bibliography-bold) {
   font-weight: 700;
+}
+
+.a4-page--kisaltmalar :deep(.ProseMirror h1) {
+  text-align: center;
+  font-size: 14pt;
+  font-weight: 700;
+  margin: 0 0 1.5rem;
+  text-transform: uppercase;
+}
+
+.a4-page--kisaltmalar :deep(.kisaltmalar-table) {
+  width: 100%;
+  border-collapse: collapse;
+  border: none;
+  margin-top: 0.5rem;
+  font-family: 'Times New Roman', Times, serif;
+  font-size: 12pt;
+}
+
+.a4-page--kisaltmalar :deep(.kisaltmalar-table td) {
+  border: none;
+  padding: 0 0.5rem 0.35rem 0;
+  vertical-align: top;
+  line-height: 1.5;
+}
+
+.a4-page--kisaltmalar :deep(.kisaltmalar-table td:nth-child(1)) {
+  white-space: nowrap;
+  width: 1%;
+}
+
+.a4-page--kisaltmalar :deep(.kisaltmalar-table td:nth-child(2)) {
+  white-space: nowrap;
+  width: 1%;
+  padding-left: 0;
+  padding-right: 0.25rem;
+}
+
+.a4-page--kisaltmalar :deep(.kisaltmalar-table td:nth-child(3)) {
+  width: auto;
+}
+
+.a4-page--kisaltmalar :deep(.kisaltmalar-table p) {
+  margin: 0;
 }
 </style>
 

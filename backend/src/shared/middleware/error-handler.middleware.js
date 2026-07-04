@@ -15,6 +15,13 @@ export function errorHandler(err, req, res, _next) {
     });
   }
 
+  if (err.message === 'INVALID_EXCEL_TYPE') {
+    return sendError(res, {
+      status: 400,
+      message: req.t('user.library.import.invalidType'),
+    });
+  }
+
   const status = err.status ?? 500;
   let message = err.message;
 

@@ -28,6 +28,7 @@ router.post(
 );
 router.get('/:projectId/citation-images/:citationImageId', citationImageController.getById);
 router.put('/:projectId/citation-images/:citationImageId', citationImageController.update);
+router.delete('/:projectId/citation-images/:citationImageId', citationImageController.remove);
 router.post(
   '/:projectId/citation-images/:citationImageId/stream-token',
   citationImageController.createStreamToken,
@@ -40,6 +41,8 @@ router.delete('/:projectId', projectController.deleteProject);
 
 router.get('/:projectId/comments', commentController.listComments);
 router.post('/:projectId/comments', commentController.createComment);
+router.put('/:projectId/comments/sync-positions', commentController.syncPositions);
+router.delete('/:projectId/comments/:commentId', commentController.deleteComment);
 router.patch('/:projectId/comments/:commentId/resolve', commentController.resolveComment);
 
 router.get('/:projectId/shares', shareController.listShares);

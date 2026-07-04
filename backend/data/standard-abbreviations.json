@@ -1,0 +1,17 @@
+{
+  "title": "KISALTMALAR LİSTESİ",
+  "items": [
+    { "abbreviation": "ABD", "definition": "Amerika Birleşik Devletleri" },
+    { "abbreviation": "a.e", "definition": "Aynı eser" },
+    { "abbreviation": "a.g.e", "definition": "Adı geçen eser" },
+    { "abbreviation": "a.g.m", "definition": "Adı geçen makale" },
+    { "abbreviation": "a.g.t", "definition": "Adı geçen tez" },
+    { "abbreviation": "C", "definition": "Cilt" },
+    { "abbreviation": "BOA", "definition": "Cumhurbaşkanlığı Devlet Arşivleri Başkanlığı Osmanlı Arşivi" },
+    { "abbreviation": "Çev", "definition": "Çeviren" },
+    { "abbreviation": "S", "definition": "Sayı" },
+    { "abbreviation": "s", "definition": "Sayfa" },
+    { "abbreviation": "TTK", "definition": "Türk Tarih Kurumu" },
+    { "abbreviation": "TDV", "definition": "Türk Diyanet Vakfı" }
+  ]
+}

@@ -1,16 +1,30 @@
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue';
+import { ref, computed, onMounted, watch, nextTick } from 'vue';
+import { useRoute } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { api } from '@/api/client';
+import { i18n } from '@/i18n';
+import { toast } from '@/composables/useToast';
 import { formatMlaBibliography } from '@/utils/mla-citation.js';
 import { buildAuthorsDisplay, resolveAuthorFields } from '@/utils/author-citation.js';
 import LibraryPdfModal from '@/components/library/LibraryPdfModal.vue';
 
 const { t } = useI18n();
+const route = useRoute();
+
+const uploadProjectId = computed(() => {
+  const id = Number(route.query.projectId);
+  return Number.isFinite(id) && id > 0 ? id : null;
+});
 
 const sources = ref([]);
 const loading = ref(true);
+const pageLoading = ref(false);
 const showForm = ref(false);
+const pdfUploadInput = ref(null);
+const pdfUploadSourceId = ref(null);
+const excelImportInput = ref(null);
+const excelImporting = ref(false);
 const saving = ref(false);
 const editingSourceId = ref(null);
 
@@ -80,8 +94,16 @@ const pageNumbers = computed(() => {
   return pages;
 });
 
-async function loadSources() {
-  loading.value = true;
+async function loadSources({ pageChange = false } = {}) {
+  const isInitialLoad = loading.value && sources.value.length === 0;
+  if (isInitialLoad) {
+    loading.value = true;
+  } else if (pageChange) {
+    pageLoading.value = true;
+  } else {
+    loading.value = true;
+  }
+
   try {
     const res = await api('/user/library/sources', {
       query: {
@@ -96,6 +118,7 @@ async function loadSources() {
     pagination.value = res.data?.pagination ?? { total: 0, totalPages: 1 };
   } finally {
     loading.value = false;
+    pageLoading.value = false;
   }
 }
 
@@ -119,7 +142,8 @@ function onFilterChange() {
 function goToPage(nextPage) {
   if (nextPage < 1 || nextPage > pagination.value.totalPages) return;
   page.value = nextPage;
-  void loadSources();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  void loadSources({ pageChange: true });
 }
 
 function resetForm() {
@@ -132,7 +156,7 @@ function openCreateForm() {
   showForm.value = true;
 }
 
-function openEditForm(source) {
+async function openEditForm(source) {
   editingSourceId.value = source.id;
   const { firstName, lastName } = resolveAuthorFields(source);
   form.value = {
@@ -148,6 +172,8 @@ function openEditForm(source) {
     pages: source.pages ?? '',
   };
   showForm.value = true;
+  await nextTick();
+  document.getElementById('library-source-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function closeForm() {
@@ -167,26 +193,17 @@ function buildPayload() {
     authorFirstName: form.value.authorFirstName.trim(),
     authorLastName: form.value.authorLastName.trim(),
     publicationYear: form.value.publicationYear,
+    publicationPlace: form.value.publicationPlace.trim() || null,
+    pages: form.value.pages.trim() || null,
   };
 
-  if (isBook.value || isArticle.value) {
+  if (form.value.publisher.trim()) {
     body.publisher = form.value.publisher.trim();
-  } else if (form.value.publisher.trim()) {
-    body.publisher = form.value.publisher.trim();
-  }
-
-  if (isBook.value && form.value.publicationPlace.trim()) {
-    body.publicationPlace = form.value.publicationPlace.trim();
-  }
-
-  if (!isArticle.value && !isBook.value && form.value.publicationPlace.trim()) {
-    body.publicationPlace = form.value.publicationPlace.trim();
   }
 
   if (isArticle.value) {
     body.volume = form.value.volume.trim() || null;
     body.issue = form.value.issue.trim() || null;
-    body.pages = form.value.pages.trim() || null;
   }
 
   return body;
@@ -208,21 +225,32 @@ async function saveSource() {
   }
 }
 
-async function uploadPdf(sourceId, event) {
+function openPdfUpload(sourceId) {
+  pdfUploadSourceId.value = sourceId;
+  pdfUploadInput.value?.click();
+}
+
+async function onPdfUploadSelected(event) {
+  const sourceId = pdfUploadSourceId.value;
   const file = event.target.files?.[0];
-  if (!file) return;
+  event.target.value = '';
+  pdfUploadSourceId.value = null;
+  if (!sourceId || !file) return;
 
   const formData = new FormData();
   formData.append('file', file);
+  if (uploadProjectId.value) {
+    formData.append('projectId', String(uploadProjectId.value));
+  }
 
   try {
     await api(`/user/library/sources/${sourceId}/upload`, {
       method: 'POST',
       formData,
     });
-    await loadSources();
-  } finally {
-    event.target.value = '';
+    await loadSources({ pageChange: true });
+  } catch {
+    // API toast handles errors.
   }
 }
 
@@ -233,6 +261,61 @@ function openPdfViewer(source) {
 
 function closePdfViewer() {
   pdfViewer.value = { sourceId: null, title: '' };
+}
+
+const API_BASE = import.meta.env.VITE_API_URL ?? '/api/v1';
+
+async function exportExcel() {
+  try {
+    const token = localStorage.getItem('tertip_access_token');
+    const res = await fetch(`${API_BASE}/user/library/sources/export`, {
+      headers: {
+        Authorization: token ? `Bearer ${token}` : '',
+        'Accept-Language': i18n.global.locale.value,
+      },
+    });
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      toast.error(data.message ?? t('common.error'));
+      return;
+    }
+
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `tertip-kutuphane-${new Date().toISOString().slice(0, 10)}.xlsx`;
+    link.click();
+    URL.revokeObjectURL(url);
+  } catch {
+    toast.error(t('common.error'));
+  }
+}
+
+function openExcelImport() {
+  excelImportInput.value?.click();
+}
+
+async function onExcelImportSelected(event) {
+  const file = event.target.files?.[0];
+  event.target.value = '';
+  if (!file) return;
+
+  excelImporting.value = true;
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    await api('/user/library/sources/import', {
+      method: 'POST',
+      formData,
+      notify: true,
+    });
+    page.value = 1;
+    await loadSources();
+  } finally {
+    excelImporting.value = false;
+  }
 }
 
 watch(pageSize, () => {
@@ -247,13 +330,37 @@ onMounted(loadSources);
   <div>
     <div class="flex flex-wrap items-center justify-between gap-3 mb-6">
       <h1 class="text-2xl font-bold">{{ t('library.title') }}</h1>
-      <button
-        type="button"
-        class="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700"
-        @click="openCreateForm"
-      >
-        {{ t('library.add') }}
-      </button>
+      <div class="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          class="px-4 py-2 border border-slate-200 rounded-lg hover:bg-slate-50 text-sm"
+          @click="exportExcel"
+        >
+          {{ t('library.exportExcel') }}
+        </button>
+        <button
+          type="button"
+          class="px-4 py-2 border border-slate-200 rounded-lg hover:bg-slate-50 text-sm disabled:opacity-50"
+          :disabled="excelImporting"
+          @click="openExcelImport"
+        >
+          {{ excelImporting ? t('library.importingExcel') : t('library.importExcel') }}
+        </button>
+        <input
+          ref="excelImportInput"
+          type="file"
+          accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+          class="hidden"
+          @change="onExcelImportSelected"
+        />
+        <button
+          type="button"
+          class="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700"
+          @click="openCreateForm"
+        >
+          {{ t('library.add') }}
+        </button>
+      </div>
     </div>
 
     <div class="bg-white rounded-xl shadow-page p-4 mb-6 border border-slate-100 flex flex-wrap gap-3 items-end">
@@ -289,6 +396,7 @@ onMounted(loadSources);
 
     <form
       v-if="showForm"
+      id="library-source-form"
       class="bg-white rounded-xl shadow-page p-6 mb-6 border border-slate-100 space-y-4"
       @submit.prevent="saveSource"
     >
@@ -330,32 +438,7 @@ onMounted(loadSources);
           <input v-model="form.title" required class="w-full border rounded-lg px-3 py-2" />
         </div>
 
-        <template v-if="isBook">
-          <div>
-            <label class="block text-sm mb-1">{{ t('library.publicationPlace') }}</label>
-            <input
-              v-model="form.publicationPlace"
-              required
-              class="w-full border rounded-lg px-3 py-2"
-              :placeholder="t('library.publicationPlacePlaceholder')"
-            />
-          </div>
-          <div>
-            <label class="block text-sm mb-1">{{ t('library.publisher') }}</label>
-            <input v-model="form.publisher" required class="w-full border rounded-lg px-3 py-2" />
-          </div>
-          <div>
-            <label class="block text-sm mb-1">{{ t('library.year') }}</label>
-            <input
-              v-model.number="form.publicationYear"
-              type="number"
-              required
-              class="w-full border rounded-lg px-3 py-2"
-            />
-          </div>
-        </template>
-
-        <template v-else-if="isArticle">
+        <template v-if="isArticle">
           <div class="sm:col-span-2">
             <label class="block text-sm mb-1">{{ t('library.journal') }}</label>
             <input v-model="form.publisher" required class="w-full border rounded-lg px-3 py-2" />
@@ -368,44 +451,46 @@ onMounted(loadSources);
             <label class="block text-sm mb-1">{{ t('library.issue') }}</label>
             <input v-model="form.issue" required class="w-full border rounded-lg px-3 py-2" />
           </div>
-          <div>
-            <label class="block text-sm mb-1">{{ t('library.year') }}</label>
+        </template>
+
+        <template v-else>
+          <div class="sm:col-span-2">
+            <label class="block text-sm mb-1">{{ t('library.publisher') }}</label>
             <input
-              v-model.number="form.publicationYear"
-              type="number"
-              required
+              v-model="form.publisher"
+              :required="isBook"
               class="w-full border rounded-lg px-3 py-2"
-            />
-          </div>
-          <div>
-            <label class="block text-sm mb-1">{{ t('library.pageRange') }}</label>
-            <input
-              v-model="form.pages"
-              required
-              class="w-full border rounded-lg px-3 py-2"
-              placeholder="112-118"
             />
           </div>
         </template>
 
-        <template v-else>
-          <div>
-            <label class="block text-sm mb-1">{{ t('library.publicationPlace') }}</label>
-            <input v-model="form.publicationPlace" class="w-full border rounded-lg px-3 py-2" />
-          </div>
-          <div>
-            <label class="block text-sm mb-1">{{ t('library.publisher') }}</label>
-            <input v-model="form.publisher" class="w-full border rounded-lg px-3 py-2" />
-          </div>
-          <div>
-            <label class="block text-sm mb-1">{{ t('library.year') }}</label>
-            <input
-              v-model.number="form.publicationYear"
-              type="number"
-              class="w-full border rounded-lg px-3 py-2"
-            />
-          </div>
-        </template>
+        <div>
+          <label class="block text-sm mb-1">{{ t('library.publicationPlace') }}</label>
+          <input
+            v-model="form.publicationPlace"
+            :required="isBook"
+            class="w-full border rounded-lg px-3 py-2"
+            :placeholder="t('library.publicationPlacePlaceholder')"
+          />
+        </div>
+        <div>
+          <label class="block text-sm mb-1">{{ t('library.year') }}</label>
+          <input
+            v-model.number="form.publicationYear"
+            type="number"
+            :required="isBook || isArticle"
+            class="w-full border rounded-lg px-3 py-2"
+          />
+        </div>
+        <div>
+          <label class="block text-sm mb-1">{{ t('library.pageRange') }}</label>
+          <input
+            v-model="form.pages"
+            :required="isArticle"
+            class="w-full border rounded-lg px-3 py-2"
+            placeholder="112-118"
+          />
+        </div>
       </div>
 
       <p v-if="usesMlaFields" class="text-xs text-slate-500">{{ t('library.mlaHint') }}</p>
@@ -429,7 +514,7 @@ onMounted(loadSources);
       </div>
     </form>
 
-    <p v-if="loading" class="text-slate-500">{{ t('common.loading') }}</p>
+    <p v-if="loading && sources.length === 0" class="text-slate-500">{{ t('common.loading') }}</p>
     <p v-else-if="sources.length === 0" class="text-slate-500">{{ emptyMessage }}</p>
 
     <template v-else>
@@ -437,14 +522,18 @@ onMounted(loadSources);
         {{ t('library.resultsSummary', { from: showingFrom, to: showingTo, total: pagination.total }) }}
       </p>
 
-      <ul class="space-y-3">
+      <ul
+        :key="page"
+        class="space-y-3 relative transition-opacity"
+        :class="{ 'opacity-60': pageLoading }"
+      >
         <li
           v-for="source in sources"
           :key="source.id"
-          class="bg-white rounded-xl shadow-page p-4 border border-slate-100 flex flex-wrap items-center justify-between gap-3"
+          class="bg-white rounded-xl shadow-page p-4 border border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
         >
-          <div class="min-w-0 flex-1">
-            <p class="font-medium">{{ source.title }}</p>
+          <div class="min-w-0 w-full sm:flex-1 overflow-hidden">
+            <p class="font-medium truncate">{{ source.title }}</p>
             <p class="text-sm text-slate-500">
               {{ t(`library.types.${source.sourceType}`) }}
               <span v-if="sourceDisplayAuthor(source)"> · {{ sourceDisplayAuthor(source) }}</span>
@@ -452,12 +541,12 @@ onMounted(loadSources);
             </p>
             <p
               v-if="source.sourceType === 'book' || source.sourceType === 'article'"
-              class="text-sm text-slate-600 mt-1 italic"
+              class="hidden sm:block text-sm text-slate-600 mt-1 italic"
             >
               {{ formatMlaBibliography(source) }}
             </p>
           </div>
-          <div class="flex flex-wrap items-center gap-3 shrink-0">
+          <div class="relative z-10 flex flex-wrap items-center gap-3 w-full sm:w-auto sm:shrink-0">
             <button
               v-if="source.hasPdf"
               type="button"
@@ -473,13 +562,24 @@ onMounted(loadSources);
             >
               {{ t('library.edit') }}
             </button>
-            <label class="text-sm text-indigo-600 cursor-pointer hover:underline">
+            <button
+              type="button"
+              class="text-sm text-indigo-600 hover:underline"
+              @click="openPdfUpload(source.id)"
+            >
               {{ source.hasPdf ? t('library.replacePdf') : t('library.upload') }}
-              <input type="file" accept="application/pdf" class="hidden" @change="uploadPdf(source.id, $event)" />
-            </label>
+            </button>
           </div>
         </li>
       </ul>
+
+      <input
+        ref="pdfUploadInput"
+        type="file"
+        accept="application/pdf"
+        class="hidden"
+        @change="onPdfUploadSelected"
+      />
 
       <div
         v-if="pagination.totalPages > 1"

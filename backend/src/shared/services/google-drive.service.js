@@ -10,8 +10,10 @@ import {
   pickOAuthCredentials,
 } from '../utils/google-token.util.js';
 
-const LIBRARY_PATH = ['Tertip', 'Library'];
-const PROJECTS_PATH = ['Tertip', 'Projects'];
+const ROOT_FOLDER_NAME = 'Tertip';
+const PROJECTS_FOLDER_NAME = 'Projects';
+const PROJECT_LIBRARY_FOLDER_NAME = 'Library';
+const LEGACY_LIBRARY_FOLDER_NAME = 'Library';
 
 const userRefreshChains = new Map();
 
@@ -83,39 +85,70 @@ function sanitizeDriveName(name) {
   return name.replace(/[\\/:*?"<>|]/g, '-').trim().slice(0, 100) || 'Untitled';
 }
 
+function escapeDriveQueryValue(value) {
+  return String(value).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
 async function persistFolderCache(userId, cacheKey, folderId) {
   const current = await googleModel.getOAuthToken(userId);
   if (!current) return;
   await googleModel.saveOAuthToken(userId, { ...current, [cacheKey]: folderId });
 }
 
-async function ensurePath(userId, segments, cacheKey, { drive: existingDrive } = {}) {
+async function getFolderParents(drive, folderId) {
+  try {
+    const { data } = await drive.files.get({
+      fileId: folderId,
+      fields: 'id, parents, trashed',
+    });
+    if (!data.id || data.trashed) return null;
+    return data.parents ?? [];
+  } catch (err) {
+    if (isDriveNotFoundError(err)) return null;
+    throw err;
+  }
+}
+
+async function isFolderDirectChildOf(drive, folderId, parentId) {
+  const parents = await getFolderParents(drive, folderId);
+  if (!parents) return false;
+  return parents.includes(parentId);
+}
+
+async function ensureNamedFolder(drive, name, parentId) {
+  let folderId = await findFolder(drive, name, parentId);
+  if (!folderId) {
+    folderId = await createFolder(drive, name, parentId);
+  }
+  return folderId;
+}
+
+export async function ensureProjectsRootFolder(userId, { drive: existingDrive } = {}) {
   const drive = existingDrive ?? (await getDriveClientForUser(userId)).drive;
+  const tertipId = await ensureNamedFolder(drive, ROOT_FOLDER_NAME, null);
+  await persistFolderCache(userId, 'tertip_folder_id', tertipId);
 
   const stored = await googleModel.getOAuthToken(userId);
-  if (cacheKey && stored?.[cacheKey]) {
-    return { drive, folderId: stored[cacheKey] };
+  const cachedProjectsId = stored?.projects_folder_id;
+  if (
+    cachedProjectsId &&
+    (await driveFileExists(drive, cachedProjectsId)) &&
+    (await isFolderDirectChildOf(drive, cachedProjectsId, tertipId))
+  ) {
+    return cachedProjectsId;
   }
 
-  let parentId = null;
-  for (const segment of segments) {
-    let folderId = await findFolder(drive, segment, parentId);
-    if (!folderId) {
-      folderId = await createFolder(drive, segment, parentId);
-    }
-    parentId = folderId;
-  }
-
-  if (cacheKey) {
-    await persistFolderCache(userId, cacheKey, parentId);
-  }
-
-  return { drive, folderId: parentId };
+  const projectsId = await ensureNamedFolder(drive, PROJECTS_FOLDER_NAME, tertipId);
+  await persistFolderCache(userId, 'projects_folder_id', projectsId);
+  return projectsId;
 }
 
 async function findFolder(drive, name, parentId = null) {
-  const parentClause = parentId ? ` and '${parentId}' in parents` : '';
-  const query = `name='${name}' and mimeType='application/vnd.google-apps.folder' and trashed=false${parentClause}`;
+  const safeName = escapeDriveQueryValue(name);
+  const parentClause = parentId
+    ? ` and '${parentId}' in parents`
+    : " and 'root' in parents";
+  const query = `name='${safeName}' and mimeType='application/vnd.google-apps.folder' and trashed=false${parentClause}`;
 
   const { data } = await drive.files.list({
     q: query,
@@ -132,7 +165,7 @@ async function createFolder(drive, name, parentId = null) {
     requestBody: {
       name,
       mimeType: 'application/vnd.google-apps.folder',
-      parents: parentId ? [parentId] : undefined,
+      parents: parentId ? [parentId] : ['root'],
     },
     fields: 'id',
   });
@@ -200,14 +233,44 @@ export async function verifyGoogleConnection(userId) {
   }
 }
 
-export async function ensureLibraryFolder(userId) {
-  const { folderId } = await ensurePath(userId, LIBRARY_PATH, 'library_folder_id');
+async function ensureProjectLibraryFolder(drive, projectFolderId) {
+  let folderId = await findFolder(drive, PROJECT_LIBRARY_FOLDER_NAME, projectFolderId);
+  if (!folderId) {
+    folderId = await createFolder(drive, PROJECT_LIBRARY_FOLDER_NAME, projectFolderId);
+  }
   return folderId;
 }
 
-export async function uploadFileToLibrary(userId, { buffer, filename, mimeType }) {
+export async function ensureLegacyLibraryFolder(userId) {
   const { drive } = await getDriveClientForUser(userId);
-  const folderId = await ensureLibraryFolder(userId);
+  const tertipId = await ensureNamedFolder(drive, ROOT_FOLDER_NAME, null);
+  await persistFolderCache(userId, 'tertip_folder_id', tertipId);
+
+  const stored = await googleModel.getOAuthToken(userId);
+  const cachedLibraryId = stored?.library_folder_id;
+  if (
+    cachedLibraryId &&
+    (await driveFileExists(drive, cachedLibraryId)) &&
+    (await isFolderDirectChildOf(drive, cachedLibraryId, tertipId))
+  ) {
+    return cachedLibraryId;
+  }
+
+  const libraryId = await ensureNamedFolder(drive, LEGACY_LIBRARY_FOLDER_NAME, tertipId);
+  await persistFolderCache(userId, 'library_folder_id', libraryId);
+  return libraryId;
+}
+
+/** @deprecated Use ensureLegacyLibraryFolder */
+export async function ensureLibraryFolder(userId) {
+  return ensureLegacyLibraryFolder(userId);
+}
+
+export async function uploadFileToLibrary(userId, { buffer, filename, mimeType, projectFolderId }) {
+  const { drive } = await getDriveClientForUser(userId);
+  const folderId = projectFolderId
+    ? await ensureProjectLibraryFolder(drive, projectFolderId)
+    : await ensureLegacyLibraryFolder(userId);
 
   const { data } = await drive.files.create({
     requestBody: {
@@ -249,6 +312,12 @@ export async function streamDriveFile(userId, fileId, rangeHeader) {
   };
 }
 
+export async function deleteDriveFile(userId, fileId) {
+  if (!fileId) return;
+  const { drive } = await getDriveClientForUser(userId);
+  await drive.files.delete({ fileId });
+}
+
 export async function revokeGoogleAccess(userId) {
   try {
     const { client } = await getDriveClientForUser(userId);
@@ -261,16 +330,12 @@ export async function revokeGoogleAccess(userId) {
   }
 }
 
-export async function ensureProjectsRootFolder(userId, { drive } = {}) {
-  const { folderId } = await ensurePath(userId, PROJECTS_PATH, 'projects_folder_id', { drive });
-  return folderId;
-}
-
 export async function createProjectWorkspace(userId, title) {
   const { drive } = await getDriveClientForUser(userId);
-  const projectsRoot = await ensureProjectsRootFolder(userId);
+  const projectsRoot = await ensureProjectsRootFolder(userId, { drive });
   const folderName = sanitizeDriveName(title);
   const folderId = await createFolder(drive, folderName, projectsRoot);
+  await ensureProjectLibraryFolder(drive, folderId);
 
   const { data: doc } = await drive.files.create({
     requestBody: {
@@ -329,8 +394,16 @@ export async function ensureProjectGoogleDoc(
   { drive: existingDrive } = {},
 ) {
   const drive = existingDrive ?? (await getDriveClientForUser(userId)).drive;
+  const projectsRoot = await ensureProjectsRootFolder(userId, { drive });
 
-  if (await driveFileExists(drive, googleDocsFileId)) {
+  const docExists = await driveFileExists(drive, googleDocsFileId);
+  const folderExists = await driveFileExists(drive, googleDriveFolderId);
+  const folderInWorkspace =
+    folderExists &&
+    (await isFolderDirectChildOf(drive, googleDriveFolderId, projectsRoot));
+
+  if (docExists && folderInWorkspace) {
+    await ensureProjectLibraryFolder(drive, googleDriveFolderId);
     return {
       googleDocsFileId,
       googleDriveFolderId,
@@ -338,17 +411,20 @@ export async function ensureProjectGoogleDoc(
     };
   }
 
-  let folderId = googleDriveFolderId;
-  if (!(await driveFileExists(drive, folderId))) {
-    const projectsRoot = await ensureProjectsRootFolder(userId, { drive });
+  let folderId = folderInWorkspace ? googleDriveFolderId : null;
+  if (!folderId) {
     folderId = await createFolder(drive, sanitizeDriveName(title), projectsRoot);
   }
 
-  const newDocId = await createGoogleDocInFolder(drive, title, folderId);
+  await ensureProjectLibraryFolder(drive, folderId);
+
+  const newDocId = folderInWorkspace && docExists
+    ? googleDocsFileId
+    : await createGoogleDocInFolder(drive, title, folderId);
 
   return {
     googleDocsFileId: newDocId,
     googleDriveFolderId: folderId,
-    recreated: true,
+    recreated: !docExists || !folderInWorkspace,
   };
 }

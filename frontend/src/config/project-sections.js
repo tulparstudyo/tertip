@@ -93,6 +93,7 @@ export const EDITOR_SECTION_CONFIG = {
     bulletList: true,
     orderedList: false,
     blockquote: false,
+    standardAbbreviations: true,
   },
   icindekiler: {
     footnotes: false,

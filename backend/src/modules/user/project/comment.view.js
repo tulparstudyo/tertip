@@ -9,6 +9,8 @@ export const commentView = {
       commentText: row.comment_text,
       lineNumber: row.line_number,
       columnOffset: row.column_offset,
+      sectionSlug: row.section_slug ?? 'body',
+      googleDriveCommentId: row.google_drive_comment_id ?? null,
       isResolved: row.is_resolved,
       createdAt: row.created_at,
     };

@@ -14,7 +14,8 @@ export const commentController = {
       return sendError(res, { status: 404, message: req.t('user.project.get.notFound') });
     }
 
-    const rows = await commentModel.findByProjectId(projectId);
+    const sectionSlug = req.query.section ?? null;
+    const rows = await commentModel.findByProjectId(projectId, sectionSlug);
     sendSuccess(res, { data: commentView.formatCommentList(rows) });
   }),
 
@@ -26,7 +27,7 @@ export const commentController = {
       return sendError(res, { status: 404, message: req.t('user.project.get.notFound') });
     }
 
-    const { commentText, lineNumber, columnOffset, tiptapCommentId } = req.body;
+    const { commentText, lineNumber, columnOffset, tiptapCommentId, sectionSlug } = req.body;
 
     if (!commentText?.trim() || lineNumber == null || columnOffset == null) {
       return sendError(res, { status: 400, message: req.t('user.comment.missingFields') });
@@ -39,6 +40,7 @@ export const commentController = {
       commentText: commentText.trim(),
       lineNumber: Number(lineNumber),
       columnOffset: Number(columnOffset),
+      sectionSlug: sectionSlug ?? 'body',
     });
 
     sendSuccess(res, {
@@ -63,5 +65,50 @@ export const commentController = {
     }
 
     sendSuccess(res, { message: req.t('user.comment.resolve.success') });
+  }),
+
+  deleteComment: asyncHandler(async (req, res) => {
+    const projectId = Number(req.params.projectId);
+    const commentId = Number(req.params.commentId);
+    const access = await projectModel.findAccessibleProject(projectId, req.user.id);
+
+    if (!access) {
+      return sendError(res, { status: 404, message: req.t('user.project.get.notFound') });
+    }
+
+    const existing = await commentModel.findByIdAndProject(commentId, projectId);
+    if (!existing) {
+      return sendError(res, { status: 404, message: req.t('user.comment.notFound') });
+    }
+
+    const isAuthor = existing.user_id === req.user.id;
+    if (!isAuthor && !access.isOwner) {
+      return sendError(res, { status: 403, message: req.t('user.comment.delete.forbidden') });
+    }
+
+    await commentModel.deleteById(commentId, projectId);
+    sendSuccess(res, { message: req.t('user.comment.delete.success') });
+  }),
+
+  syncPositions: asyncHandler(async (req, res) => {
+    const projectId = Number(req.params.projectId);
+    const access = await projectModel.findAccessibleProject(projectId, req.user.id);
+
+    if (!access) {
+      return sendError(res, { status: 404, message: req.t('user.project.get.notFound') });
+    }
+
+    const { sectionSlug, positions } = req.body;
+    if (!Array.isArray(positions)) {
+      return sendError(res, { status: 400, message: req.t('user.comment.missingFields') });
+    }
+
+    const section = sectionSlug ?? 'body';
+    const rows = await commentModel.updatePositions(projectId, section, positions);
+
+    sendSuccess(res, {
+      message: req.t('user.comment.syncPositions.success'),
+      data: commentView.formatCommentList(rows),
+    });
   }),
 };

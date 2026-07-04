@@ -3,6 +3,7 @@ import { ref } from 'vue';
 import { useRouter, RouterLink } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useAuth } from '@/composables/useAuth';
+import AuthBrand from '@/components/AuthBrand.vue';
 
 const { t } = useI18n();
 const router = useRouter();
@@ -28,7 +29,8 @@ async function handleSubmit() {
 <template>
   <div class="min-h-screen flex items-center justify-center px-4">
     <div class="w-full max-w-md bg-white rounded-xl shadow-page p-8">
-      <h1 class="text-2xl font-bold text-indigo-700 mb-6">{{ t('auth.login.title') }}</h1>
+      <AuthBrand />
+      <h1 class="text-xl font-semibold text-slate-800 mb-6 text-center">{{ t('auth.login.title') }}</h1>
       <form class="space-y-4" @submit.prevent="handleSubmit">
         <div>
           <label class="block text-sm font-medium mb-1">{{ t('auth.email') }}</label>

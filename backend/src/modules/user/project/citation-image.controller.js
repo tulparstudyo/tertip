@@ -1,6 +1,6 @@
 import { asyncHandler } from '../../../shared/utils/async-handler.util.js';
 import { sendSuccess, sendError } from '../../../shared/utils/api-response.util.js';
-import { uploadFileToLibrary } from '../../../shared/services/google-drive.service.js';
+import { uploadFileToLibrary, deleteDriveFile } from '../../../shared/services/google-drive.service.js';
 import { signStreamGatewayToken } from '../../../shared/utils/jwt.util.js';
 import { respondToGoogleError } from '../../../shared/utils/google-error.util.js';
 import { projectModel } from './project.model.js';
@@ -120,6 +120,7 @@ export const citationImageController = {
         buffer: req.file.buffer,
         filename: req.file.originalname || `citation-${Date.now()}.jpg`,
         mimeType: req.file.mimetype,
+        projectFolderId: ctx.access.project.google_drive_folder_id,
       });
 
       const row = await citationImageModel.insert({
@@ -275,5 +276,31 @@ export const citationImageController = {
         expiresIn: 1800,
       },
     });
+  }),
+
+  remove: asyncHandler(async (req, res) => {
+    const ctx = await resolveProjectAccess(req, res);
+    if (!ctx) return;
+
+    const id = Number(req.params.citationImageId);
+    const existing = await citationImageModel.findByIdAndProject(id, ctx.projectId, req.user.id);
+    if (!existing) {
+      return sendError(res, {
+        status: 404,
+        message: req.t('user.citationImage.notFound'),
+      });
+    }
+
+    try {
+      if (existing.google_drive_file_id) {
+        await deleteDriveFile(req.user.id, existing.google_drive_file_id);
+      }
+    } catch (err) {
+      return respondToGoogleError(req, res, err);
+    }
+
+    await citationImageModel.deleteById(id, ctx.projectId, req.user.id);
+
+    sendSuccess(res, { message: req.t('user.citationImage.deleted') });
   }),
 };

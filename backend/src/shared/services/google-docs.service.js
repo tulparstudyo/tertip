@@ -1,6 +1,9 @@
 import { google } from 'googleapis';
 import { getDriveClientForUser } from './google-drive.service.js';
-import { GOOGLE_DOC_SECTION_LABELS, GOOGLE_DOC_SYNC_ORDER } from '../constants/project-sections.constants.js';
+import {
+  GOOGLE_DOC_SECTION_LABELS,
+  GOOGLE_DOC_SYNC_ORDER,
+} from '../constants/project-sections.constants.js';
 import {
   isInvalidGrantError,
   isGoogleNetworkError,
@@ -91,6 +94,16 @@ function parseRuns(content) {
         citation:
           node.attrs?.formattedText ||
           `Kaynak #${node.attrs?.sourceId ?? '?'}, s. ${node.attrs?.pageNumber ?? '?'}`,
+      });
+      continue;
+    }
+
+    if (node.type === 'editorComment') {
+      runs.push({
+        type: 'comment',
+        commentId: node.attrs?.commentId ?? null,
+        commentText: node.attrs?.commentText ?? '',
+        userName: node.attrs?.userName ?? '',
       });
     }
   }
@@ -190,6 +203,7 @@ function sectionHasContent(doc) {
   if (serialized.includes('"academicFootnote"')) return true;
   if (serialized.includes('"appendixEntry"')) return true;
   if (serialized.includes('"bibliographyEntry"')) return true;
+  if (serialized.includes('"editorComment"')) return true;
   return tiptapJsonToPlainText(doc).trim().length > 0;
 }
 
@@ -361,12 +375,21 @@ async function batchUpdateChunks(docs, googleDocsFileId, requests) {
   }
 }
 
+function getRecentInsertedText(builder, maxLen = 120) {
+  for (let i = builder.insertRequests.length - 1; i >= 0; i -= 1) {
+    const text = builder.insertRequests[i]?.insertText?.text;
+    if (text) return text.slice(-maxLen);
+  }
+  return '';
+}
+
 class DocumentBuilder {
   constructor() {
     this.insertRequests = [];
     this.paragraphStyles = [];
     this.textStyles = [];
     this.footnoteCitations = [];
+    this.commentAnchors = [];
     this.index = 1;
   }
 
@@ -405,6 +428,20 @@ class DocumentBuilder {
         });
         this.footnoteCitations.push(run.citation ?? '');
         this.index += 1;
+        continue;
+      }
+
+      if (run.type === 'comment') {
+        const anchorOffset = Math.max(0, this.index - 1);
+        const quotedText = getRecentInsertedText(this).trim();
+        this.commentAnchors.push({
+          commentId: run.commentId,
+          offset: anchorOffset,
+          quotedText,
+          commentText: run.commentText ?? '',
+          userName: run.userName ?? '',
+        });
+        this.insertText('\u200b');
         continue;
       }
 
@@ -721,7 +758,7 @@ async function applyBlocksToGoogleDoc(docs, googleDocsFileId, blocks) {
     processBlock(block, builder);
   }
 
-  if (!builder.insertRequests.length) return;
+  if (!builder.insertRequests.length) return [];
 
   let insertReplies = [];
   for (const chunk of chunkRequests(builder.insertRequests)) {
@@ -741,6 +778,8 @@ async function applyBlocksToGoogleDoc(docs, googleDocsFileId, blocks) {
   if (formatRequests.length) {
     await batchUpdateChunks(docs, googleDocsFileId, formatRequests);
   }
+
+  return builder.commentAnchors;
 }
 
 function normalizeSectionEntries(sectionEntries) {
@@ -801,13 +840,120 @@ export async function syncProjectToGoogleDoc(
   const docs = google.docs({ version: 'v1', auth: client });
 
   try {
-    await applyBlocksToGoogleDoc(docs, googleDocsFileId, blocks);
+    return await applyBlocksToGoogleDoc(docs, googleDocsFileId, blocks);
   } catch (err) {
     const message = extractGoogleDocsError(err);
     const wrapped = new Error(message);
     wrapped.cause = err;
     throw wrapped;
   }
+}
+
+async function deleteAllDriveComments(drive, fileId) {
+  let pageToken;
+  do {
+    const { data } = await drive.comments.list({
+      fileId,
+      pageSize: 100,
+      pageToken,
+      fields: 'nextPageToken, comments(id)',
+    });
+    for (const comment of data.comments ?? []) {
+      try {
+        await drive.comments.delete({ fileId, commentId: comment.id });
+      } catch (err) {
+        const status = err?.response?.status ?? err?.code;
+        if (status !== 404) throw err;
+      }
+    }
+    pageToken = data.nextPageToken;
+  } while (pageToken);
+}
+
+function buildDriveCommentAnchor(revisionId, offset) {
+  return JSON.stringify({
+    r: revisionId,
+    a: [{ txt: { o: offset, l: 1, ml: 1 } }],
+  });
+}
+
+function formatDriveCommentContent(row) {
+  const author = row.user_name ?? row.userName ?? 'Kullanıcı';
+  const text = row.comment_text ?? row.commentText ?? '';
+  if (row.is_resolved) {
+    return `[Çözüldü] ${author}: ${text}`;
+  }
+  return `${author}: ${text}`;
+}
+
+/**
+ * Create Google Drive comments anchored to editor comment positions after doc sync.
+ * @param {Array<{ commentId: number|string|null, offset: number }>} commentAnchors
+ * @param {Array<object>} dbComments rows from commentModel.findByProjectId
+ * @param {(commentId: number, projectId: number, driveCommentId: string) => Promise<void>} [onDriveCommentCreated]
+ */
+export async function syncProjectCommentsToGoogleDrive(
+  userId,
+  googleDocsFileId,
+  projectId,
+  commentAnchors,
+  dbComments,
+  { drive: sharedDrive, onDriveCommentCreated } = {},
+) {
+  const drive = sharedDrive ?? (await getDriveClientForUser(userId)).drive;
+  const commentMap = new Map(
+    (dbComments ?? []).map((row) => [Number(row.id), row]),
+  );
+
+  await deleteAllDriveComments(drive, googleDocsFileId);
+
+  if (!commentAnchors?.length) return { synced: 0 };
+
+  const { data: fileMeta } = await drive.files.get({
+    fileId: googleDocsFileId,
+    fields: 'headRevisionId',
+  });
+  const revisionId = fileMeta.headRevisionId;
+  if (!revisionId) return { synced: 0 };
+
+  let synced = 0;
+  const seen = new Set();
+
+  for (const anchor of commentAnchors) {
+    const commentId = Number(anchor.commentId);
+    if (!Number.isFinite(commentId) || seen.has(commentId)) continue;
+
+    const row = commentMap.get(commentId);
+    if (!row) continue;
+
+    seen.add(commentId);
+
+    const requestBody = {
+      content: formatDriveCommentContent(row),
+      anchor: buildDriveCommentAnchor(revisionId, anchor.offset),
+    };
+
+    const quoted = (anchor.quotedText ?? '').trim();
+    if (quoted) {
+      requestBody.quotedFileContent = {
+        mimeType: 'application/vnd.google-apps.document',
+        value: quoted,
+      };
+    }
+
+    const { data: created } = await drive.comments.create({
+      fileId: googleDocsFileId,
+      requestBody,
+      fields: 'id',
+    });
+
+    if (created?.id && onDriveCommentCreated) {
+      await onDriveCommentCreated(commentId, projectId, created.id);
+    }
+    synced += 1;
+  }
+
+  return { synced };
 }
 
 /** @deprecated Use syncProjectToGoogleDoc for full project export */

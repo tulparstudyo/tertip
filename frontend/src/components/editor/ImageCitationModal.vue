@@ -15,7 +15,7 @@ const props = defineProps({
   initialCitationText: { type: String, default: '' },
 });
 
-const emit = defineEmits(['saved', 'close']);
+const emit = defineEmits(['saved', 'deleted', 'close']);
 
 const { t } = useI18n();
 
@@ -28,6 +28,7 @@ const citationText = ref('');
 const citationTextTouched = ref(false);
 const ocrLoading = ref(false);
 const saving = ref(false);
+const deleting = ref(false);
 const loading = ref(false);
 
 const sourceMode = ref('existing');
@@ -303,6 +304,21 @@ async function saveCitation() {
   }
 }
 
+async function deleteCitation() {
+  if (!isEditing.value || !props.citationImageId) return;
+  if (!confirm(t('editor.deleteImageCitationConfirm'))) return;
+
+  deleting.value = true;
+  try {
+    await api(`/user/projects/${props.projectId}/citation-images/${props.citationImageId}`, {
+      method: 'DELETE',
+    });
+    emit('deleted');
+  } finally {
+    deleting.value = false;
+  }
+}
+
 function onCitationTextInput() {
   citationTextTouched.value = true;
 }
@@ -495,6 +511,15 @@ if (props.initialCitationText) {
       </div>
 
       <div class="flex gap-2 justify-end pt-2">
+        <button
+          v-if="isEditing"
+          type="button"
+          class="px-4 py-2 border border-red-200 text-red-700 rounded-lg mr-auto disabled:opacity-50"
+          :disabled="deleting || saving"
+          @click="deleteCitation"
+        >
+          {{ deleting ? t('common.loading') : t('editor.deleteImageCitation') }}
+        </button>
         <button type="button" class="px-4 py-2 border rounded-lg" @click="emit('close')">
           {{ t('common.cancel') }}
         </button>

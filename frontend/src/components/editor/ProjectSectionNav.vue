@@ -38,5 +38,11 @@ function sectionTo(projectId, section) {
         </RouterLink>
       </li>
     </ul>
+    <RouterLink
+      :to="{ name: 'library', query: { projectId: props.projectId } }"
+      class="mt-4 block px-3 py-2 rounded-lg text-sm text-slate-600 hover:bg-slate-100 transition-colors"
+    >
+      {{ t('nav.library') }}
+    </RouterLink>
   </nav>
 </template>

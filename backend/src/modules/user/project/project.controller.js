@@ -6,7 +6,7 @@ import {
   getDriveClientForUser,
   isDriveNotFoundError,
 } from '../../../shared/services/google-drive.service.js';
-import { syncProjectToGoogleDoc, projectHasSyncableContent, extractGoogleDocsError } from '../../../shared/services/google-docs.service.js';
+import { syncProjectToGoogleDoc, syncProjectCommentsToGoogleDrive, projectHasSyncableContent, extractGoogleDocsError } from '../../../shared/services/google-docs.service.js';
 import {
   collectSectionsForGoogleDoc,
   resolveProjectSectionColumn,
@@ -37,6 +37,7 @@ import {
 } from '../../../shared/utils/turkish-bibliography.util.js';
 import { libraryModel } from '../library/library.model.js';
 import { libraryView } from '../library/library.view.js';
+import { commentModel } from './comment.model.js';
 
 const VALID_TYPES = ['thesis', 'article', 'proceeding', 'book', 'proposal', 'other'];
 
@@ -609,7 +610,25 @@ export const projectController = {
       };
 
       const runSync = async () => {
-        await syncProjectToGoogleDoc(req.user.id, googleDocsFileId, sectionDocs, { client });
+        const commentAnchors = await syncProjectToGoogleDoc(
+          req.user.id,
+          googleDocsFileId,
+          sectionDocs,
+          { client },
+        );
+        const dbComments = await commentModel.findByProjectId(projectId);
+        await syncProjectCommentsToGoogleDrive(
+          req.user.id,
+          googleDocsFileId,
+          projectId,
+          commentAnchors,
+          dbComments,
+          {
+            drive,
+            onDriveCommentCreated: (commentId, pid, driveCommentId) =>
+              commentModel.updateDriveCommentId(commentId, pid, driveCommentId),
+          },
+        );
       };
 
       await ensureDoc();

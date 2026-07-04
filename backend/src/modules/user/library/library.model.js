@@ -130,6 +130,53 @@ export const libraryModel = {
     return rows[0];
   },
 
+  async replaceFromImport(sourceId, userId, payload) {
+    const {
+      sourceType,
+      title,
+      publisher,
+      publicationPlace,
+      publicationYear,
+      volume,
+      issue,
+      pages,
+    } = payload;
+    const { authorFirstName, authorLastName, authors } = normalizeAuthorPayload(payload);
+
+    const { rows } = await pool.query(
+      `UPDATE sources SET
+         source_type = $3,
+         title = $4,
+         authors = $5,
+         author_first_name = $6,
+         author_last_name = $7,
+         publisher = $8,
+         publication_place = $9,
+         publication_year = $10,
+         volume = $11,
+         issue = $12,
+         pages = $13
+       WHERE id = $1 AND user_id = $2
+       RETURNING *`,
+      [
+        sourceId,
+        userId,
+        sourceType,
+        title,
+        authors,
+        authorFirstName,
+        authorLastName,
+        publisher ?? null,
+        publicationPlace ?? null,
+        publicationYear ?? null,
+        volume ?? null,
+        issue ?? null,
+        pages ?? null,
+      ],
+    );
+    return rows[0];
+  },
+
   async updateById(sourceId, userId, payload) {
     const {
       sourceType,

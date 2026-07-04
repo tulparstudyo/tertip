@@ -1,8 +1,8 @@
 import { Node, mergeAttributes } from '@tiptap/core';
+import { TABLER_ICON_BOOKMARK, TABLER_ICON_PHOTO } from '@/utils/tabler-inline-icons.js';
 
-const FOOTNOTE_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M9 4.804A7.968 7.968 0 005.5 4c-1.255 0-2.443.29-3.5.804v10A7.969 7.969 0 015.5 14c1.669 0 3.218.51 4.5 1.385A7.962 7.962 0 0114.5 14c1.255 0 2.443.29 3.5.804v-10A7.969 7.969 0 0014.5 4c-1.669 0-3.218.51-4.5 1.385z"/></svg>`;
-
-const IMAGE_CITATION_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm1 2a1 1 0 100 2h1a1 1 0 100-2H5zm3.707 5.707a1 1 0 00-1.414-1.414L5 12.586V11a1 1 0 10-2 0v3a1 1 0 001 1h3a1 1 0 100-2H6.414l2.293-2.293zM15 7a1 1 0 100 2 1 1 0 000-2z" clip-rule="evenodd"/></svg>`;
+const FOOTNOTE_ICON_SVG = TABLER_ICON_BOOKMARK;
+const IMAGE_CITATION_ICON_SVG = TABLER_ICON_PHOTO;
 
 function citationLabel(attrs) {
   if (attrs.isImageCitation) {

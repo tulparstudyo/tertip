@@ -20,6 +20,9 @@ const documentContent = ref(null);
 const canEdit = ref(true);
 const loading = ref(true);
 const loadFailed = ref(false);
+const commentSidebarRef = ref(null);
+const editorRef = ref(null);
+const visibleLineRange = ref({ fromLine: 1, toLine: 1 });
 
 const projectId = computed(() => Number(route.params.projectId));
 
@@ -62,6 +65,15 @@ watch(
 );
 
 watch([projectId, section], loadSectionContent, { immediate: true });
+
+function onCommentAdded() {
+  commentSidebarRef.value?.loadComments();
+  editorRef.value?.syncCommentMarkersFromApi?.();
+}
+
+function onVisibleLinesChange(range) {
+  visibleLineRange.value = range;
+}
 </script>
 
 <template>
@@ -71,9 +83,18 @@ watch([projectId, section], loadSectionContent, { immediate: true });
     <div v-else-if="project" class="flex flex-col lg:flex-row gap-6">
       <div class="w-full lg:w-56 shrink-0 flex flex-col gap-4">
         <ProjectSectionNav :project-id="project.id" />
-        <CommentSidebar :project-id="project.id" :is-owner="project.isOwner" />
+        <CommentSidebar
+          ref="commentSidebarRef"
+          :project-id="project.id"
+          :section="section"
+          :is-owner="project.isOwner"
+          :visible-from-line="visibleLineRange.fromLine"
+          :visible-to-line="visibleLineRange.toLine"
+          @comment-changed="onCommentAdded"
+        />
       </div>
       <A4Editor
+        ref="editorRef"
         :key="`${project.id}-${section}`"
         :project-id="project.id"
         :title="project.title"
@@ -82,6 +103,9 @@ watch([projectId, section], loadSectionContent, { immediate: true });
         :section-label="sectionLabel"
         :initial-content="documentContent"
         :can-edit="canEdit"
+        @comment-added="onCommentAdded"
+        @comments-updated="onCommentAdded"
+        @visible-lines-change="onVisibleLinesChange"
       />
     </div>
   </div>

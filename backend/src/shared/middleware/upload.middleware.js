@@ -8,6 +8,24 @@ const ALLOWED_MIME_TYPES = new Set([
   'video/x-msvideo',
 ]);
 
+export const excelUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter(_req, file, cb) {
+    const name = (file.originalname ?? '').toLowerCase();
+    const allowedMime = new Set([
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.ms-excel',
+      'application/octet-stream',
+    ]);
+    if (allowedMime.has(file.mimetype) || name.endsWith('.xlsx') || name.endsWith('.xls')) {
+      cb(null, true);
+    } else {
+      cb(new Error('INVALID_EXCEL_TYPE'));
+    }
+  },
+});
+
 export const libraryUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 100 * 1024 * 1024 },

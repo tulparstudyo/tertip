@@ -55,4 +55,14 @@ export const citationImageModel = {
     );
     return rows[0] ?? null;
   },
+
+  async deleteById(id, projectId, userId) {
+    const { rows } = await pool.query(
+      `DELETE FROM citation_images
+       WHERE id = $1 AND project_id = $2 AND user_id = $3
+       RETURNING *`,
+      [id, projectId, userId],
+    );
+    return rows[0] ?? null;
+  },
 };
