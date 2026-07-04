@@ -12,10 +12,27 @@ if (isProduction && (!process.env.JWT_USER_SECRET || !process.env.JWT_ADMIN_SECR
   throw new Error('Missing required env: JWT_USER_SECRET and JWT_ADMIN_SECRET');
 }
 
+function parseDatabaseSsl() {
+  const value = process.env.DATABASE_SSL?.trim().toLowerCase();
+  if (value === 'true' || value === '1') {
+    return { rejectUnauthorized: false };
+  }
+  if (value === 'false' || value === '0') {
+    return false;
+  }
+  // Cloud SQL unix socket needs no TLS; external hosts default to plain TCP.
+  const url = process.env.DATABASE_URL ?? '';
+  if (url.includes('/cloudsql/')) {
+    return false;
+  }
+  return false;
+}
+
 export const env = {
   nodeEnv: process.env.NODE_ENV ?? 'development',
   port: Number(process.env.PORT) || 8080,
   databaseUrl: process.env.DATABASE_URL ?? null,
+  databaseSsl: parseDatabaseSsl(),
   defaultLocale: 'tr',
   supportedLocales: ['tr', 'en'],
   jwtUserSecret: process.env.JWT_USER_SECRET ?? 'dev-user-secret-change-me',

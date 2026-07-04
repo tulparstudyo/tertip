@@ -9,7 +9,7 @@ export const pool = env.databaseUrl
       max: 10,
       idleTimeoutMillis: 30_000,
       connectionTimeoutMillis: 10_000,
-      ssl: env.nodeEnv === 'production' ? { rejectUnauthorized: false } : false,
+      ssl: env.databaseSsl,
     })
   : null;
 
