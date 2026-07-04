@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n';
 import { api } from '@/api/client';
 import { buildAuthorsDisplay } from '@/utils/author-citation.js';
 import { formatTurkishFootnoteFull } from '@/utils/turkish-footnote.js';
+import { createDisplayableImagePreview } from '@/utils/image-preview.js';
 
 const props = defineProps({
   projectId: { type: Number, required: true },
@@ -21,6 +22,8 @@ const { t } = useI18n();
 
 const isEditing = computed(() => props.citationImageId != null);
 const previewUrl = ref('');
+const previewLoading = ref(false);
+let revokePreviewUrl = () => {};
 const remoteImageUrl = ref('');
 const ocrText = ref('');
 const pageNumber = ref(null);
@@ -81,15 +84,23 @@ function resolveCitationText() {
 }
 
 function revokePreview() {
-  if (previewUrl.value) {
-    URL.revokeObjectURL(previewUrl.value);
-    previewUrl.value = '';
-  }
+  revokePreviewUrl();
+  revokePreviewUrl = () => {};
+  previewUrl.value = '';
 }
 
-function setPreviewFromFile(file) {
+async function setPreviewFromFile(file) {
   revokePreview();
-  if (file) previewUrl.value = URL.createObjectURL(file);
+  if (!file) return;
+
+  previewLoading.value = true;
+  try {
+    const preview = await createDisplayableImagePreview(file);
+    previewUrl.value = preview.url;
+    revokePreviewUrl = preview.revoke;
+  } finally {
+    previewLoading.value = false;
+  }
 }
 
 function buildNewSourcePreview() {
@@ -325,7 +336,9 @@ function onCitationTextInput() {
 
 watch(
   () => props.imageFile,
-  (file) => setPreviewFromFile(file),
+  (file) => {
+    void setPreviewFromFile(file);
+  },
   { immediate: true },
 );
 
@@ -370,7 +383,14 @@ if (props.initialCitationText) {
         {{ isEditing ? t('editor.imageCitationEdit') : t('editor.imageCitationTitle') }}
       </h3>
 
-      <p v-if="loading" class="text-slate-500 text-sm">{{ t('common.loading') }}</p>
+      <p v-if="loading || previewLoading" class="text-slate-500 text-sm">{{ t('common.loading') }}</p>
+
+      <div
+        v-if="displayImageUrl"
+        class="border border-slate-200 rounded-lg overflow-hidden bg-slate-50"
+      >
+        <img :src="displayImageUrl" alt="" class="max-h-64 w-full object-contain mx-auto" />
+      </div>
 
       <div class="space-y-3 border-t border-slate-100 pt-4">
         <h4 class="text-sm font-medium text-slate-700">{{ t('editor.imageCitationSource') }}</h4>
@@ -473,10 +493,6 @@ if (props.initialCitationText) {
             @input="onCitationTextInput"
           />
         </div>
-      </div>
-
-      <div v-if="displayImageUrl" class="border border-slate-200 rounded-lg overflow-hidden bg-slate-50">
-        <img :src="displayImageUrl" alt="" class="max-h-64 w-full object-contain mx-auto" />
       </div>
 
       <div class="space-y-2 border-t border-slate-100 pt-4">

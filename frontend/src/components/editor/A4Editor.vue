@@ -1148,8 +1148,8 @@ function openImageCitationPicker() {
 }
 
 function onImageFileSelected(event) {
-  const file = event.target.files?.[0];
-  event.target.value = '';
+  const input = event.target;
+  const file = input.files?.[0];
   if (!file) return;
 
   imageCitationFile.value = file;
@@ -1160,6 +1160,11 @@ function onImageFileSelected(event) {
   imageCitationInitialPageNumber.value = null;
   imageCitationInitialCitationText.value = '';
   showImageCitationModal.value = true;
+
+  // iOS Safari can invalidate the File reference if the input is cleared too early.
+  requestAnimationFrame(() => {
+    input.value = '';
+  });
 }
 
 function openImageCitationEditModal(pos, attrs) {
@@ -1942,6 +1947,7 @@ onBeforeUnmount(() => {
 
     <ImageCitationModal
       v-if="showImageCitationModal && projectId"
+      :key="`${editingCitationImageId ?? 'new'}-${imageCitationFile?.lastModified ?? 0}-${imageCitationFile?.size ?? 0}`"
       :project-id="projectId"
       :image-file="imageCitationFile"
       :citation-image-id="editingCitationImageId"
