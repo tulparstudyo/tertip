@@ -22,7 +22,7 @@ watch(isEditorRoute, syncRouteState, { immediate: true });
 onMounted(attachScrollListener);
 
 function isNavActive(path) {
-  if (path === '/') return route.path === '/';
+  if (path === '/app') return route.path === '/app';
   return route.path === path || route.path.startsWith(`${path}/`);
 }
 
@@ -44,39 +44,39 @@ function toggleLocale() {
     >
       <div class="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
         <div class="flex items-center gap-6">
-          <RouterLink to="/" class="flex items-center gap-2 font-bold text-indigo-700 text-lg">
+          <RouterLink to="/app" class="flex items-center gap-2 font-bold text-indigo-700 text-lg">
             <img src="/tertip-logo.svg" alt="" class="h-7 w-7 shrink-0 text-indigo-700" width="28" height="28" />
             {{ t('app.name') }}
           </RouterLink>
           <nav class="hidden sm:flex items-center gap-1 text-sm">
             <RouterLink
-              to="/"
+              to="/app"
               class="desktop-nav-item"
-              :class="{ 'desktop-nav-item--active': isNavActive('/') }"
+              :class="{ 'desktop-nav-item--active': isNavActive('/app') }"
             >
               <IconHome v-bind="headerNavIcon" aria-hidden="true" />
               {{ t('nav.dashboard') }}
             </RouterLink>
             <RouterLink
-              to="/projects"
+              to="/app/projects"
               class="desktop-nav-item"
-              :class="{ 'desktop-nav-item--active': isNavActive('/projects') }"
+              :class="{ 'desktop-nav-item--active': isNavActive('/app/projects') }"
             >
               <IconFileText v-bind="headerNavIcon" aria-hidden="true" />
               {{ t('nav.projects') }}
             </RouterLink>
             <RouterLink
-              to="/library"
+              to="/app/library"
               class="desktop-nav-item"
-              :class="{ 'desktop-nav-item--active': isNavActive('/library') }"
+              :class="{ 'desktop-nav-item--active': isNavActive('/app/library') }"
             >
               <IconBook v-bind="headerNavIcon" aria-hidden="true" />
               {{ t('nav.library') }}
             </RouterLink>
             <RouterLink
-              to="/settings/google"
+              to="/app/settings/google"
               class="desktop-nav-item"
-              :class="{ 'desktop-nav-item--active': isNavActive('/settings') }"
+              :class="{ 'desktop-nav-item--active': isNavActive('/app/settings') }"
             >
               <IconSettings v-bind="headerNavIcon" aria-hidden="true" />
               {{ t('nav.settings') }}
@@ -110,33 +110,33 @@ function toggleLocale() {
     >
       <div class="flex items-stretch justify-around h-14">
         <RouterLink
-          to="/"
+          to="/app"
           class="mobile-nav-item"
-          :class="{ 'mobile-nav-item--active': isNavActive('/') }"
+          :class="{ 'mobile-nav-item--active': isNavActive('/app') }"
           :aria-label="t('nav.dashboard')"
         >
           <IconHome v-bind="navIcon" aria-hidden="true" />
         </RouterLink>
         <RouterLink
-          to="/projects"
+          to="/app/projects"
           class="mobile-nav-item"
-          :class="{ 'mobile-nav-item--active': isNavActive('/projects') }"
+          :class="{ 'mobile-nav-item--active': isNavActive('/app/projects') }"
           :aria-label="t('nav.projects')"
         >
           <IconFileText v-bind="navIcon" aria-hidden="true" />
         </RouterLink>
         <RouterLink
-          to="/library"
+          to="/app/library"
           class="mobile-nav-item"
-          :class="{ 'mobile-nav-item--active': isNavActive('/library') }"
+          :class="{ 'mobile-nav-item--active': isNavActive('/app/library') }"
           :aria-label="t('nav.library')"
         >
           <IconBook v-bind="navIcon" aria-hidden="true" />
         </RouterLink>
         <RouterLink
-          to="/settings/google"
+          to="/app/settings/google"
           class="mobile-nav-item"
-          :class="{ 'mobile-nav-item--active': isNavActive('/settings') }"
+          :class="{ 'mobile-nav-item--active': isNavActive('/app/settings') }"
           :aria-label="t('nav.settings')"
         >
           <IconSettings v-bind="navIcon" aria-hidden="true" />
